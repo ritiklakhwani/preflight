@@ -7,6 +7,7 @@
   "exports": { ".": "./src/index.ts" },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.65.0",
-    "@preflight/core": "workspace:*"
+    "@preflight/core": "workspace:*",
+    "openai": "^4.77.0"
   }
 }

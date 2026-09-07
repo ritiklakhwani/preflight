@@ -9,22 +9,38 @@
  * Changes made during ETHOnline 2026:
  *   - API key moved out of source. The 2024 original had a live Anthropic key
  *     at background.js:151, committed to a public repo for two years.
- *   - Replaced the raw fetch() with @anthropic-ai/sdk.
- *   - Model updated from claude-3-opus-20240229 (two generations old).
+ *   - Provider-agnostic. The 2024 build hardcoded one vendor and one model;
+ *     a dead key or a rate limit took the whole product down. Either provider
+ *     works now, selected by env, so neither is a single point of failure.
  *   - Fixed a contradiction in the 2024 prompt: it demanded twelve numbered
- *     analyses and then capped the answer at 150 words, which produced mush.
+ *     analyses and then capped the answer at 150 words, producing mush.
  *     Now returns structured JSON with a hard cap per field.
  *   - Dropped getGaiaAnalysis entirely (GaiaNet node URL is dead) and
  *     fetch1inchData (routed through a Replit proxy that no longer runs).
- *     The 1inch liquidity view is replaced by The Graph standardized
- *     subgraphs, which see protocol-level positions instead of token metadata.
+ *
+ * NOTE: the model never decides risk. Severity is computed in
+ * packages/core/src/score.ts from weighted on-chain signals. The model
+ * output is explanatory only, which is why it also passes through quarantine.
  */
-import Anthropic from '@anthropic-ai/sdk';
 import type { AnalysisResult } from '@preflight/core';
 
-const MODEL = 'claude-sonnet-5';
 const MAX_SOURCE_CHARS = 60_000;
 
+/**
+ * Read an env var, treating blank as unset.
+ * `.env` files carry empty placeholder lines (OPENAI_MODEL=), and `??` only
+ * falls back on undefined, so a blank line would otherwise be passed through
+ * as a real value. This bit us with `model: ""` on the first live run.
+ */
+function env(key: string): string | undefined {
+  const v = process.env[key];
+  return v && v.trim() ? v.trim() : undefined;
+}
+
+const ANTHROPIC_MODEL = env('ANTHROPIC_MODEL') ?? 'claude-sonnet-5';
+const OPENAI_MODEL = env('OPENAI_MODEL') ?? 'gpt-4o';
+
+export type Provider = 'anthropic' | 'openai';
 export type LlmPart = Pick<AnalysisResult, 'llmSummary' | 'llmRiskLabel' | 'llmRiskNotes'>;
 
 const SYSTEM = `You are a smart contract security reviewer.
@@ -62,33 +78,59 @@ Reply with JSON only:
 }`;
 }
 
+/** Explicit LLM_PROVIDER wins; otherwise use whichever key is present. */
+export function pickProvider(): Provider {
+  const explicit = env('LLM_PROVIDER')?.toLowerCase();
+  if (explicit === 'anthropic' || explicit === 'openai') return explicit;
+  if (env('ANTHROPIC_API_KEY')) return 'anthropic';
+  if (env('OPENAI_API_KEY')) return 'openai';
+  throw new Error('No LLM key set. Provide ANTHROPIC_API_KEY or OPENAI_API_KEY.');
+}
+
+async function viaAnthropic(prompt: string): Promise<string> {
+  const { default: Anthropic } = await import('@anthropic-ai/sdk');
+  const client = new Anthropic({ apiKey: env('ANTHROPIC_API_KEY')! });
+  const msg = await client.messages.create({
+    model: ANTHROPIC_MODEL,
+    max_tokens: 1024,
+    system: SYSTEM,
+    messages: [
+      { role: 'user', content: prompt },
+      { role: 'assistant', content: '{' },
+    ],
+  });
+  const text = msg.content
+    .filter((b): b is { type: 'text'; text: string; citations: null } => b.type === 'text')
+    .map((b) => b.text)
+    .join('');
+  return '{' + text;
+}
+
+async function viaOpenAI(prompt: string): Promise<string> {
+  const { default: OpenAI } = await import('openai');
+  const client = new OpenAI({ apiKey: env('OPENAI_API_KEY')! });
+  const res = await client.chat.completions.create({
+    model: OPENAI_MODEL,
+    max_tokens: 1024,
+    response_format: { type: 'json_object' },
+    messages: [
+      { role: 'system', content: SYSTEM },
+      { role: 'user', content: prompt },
+    ],
+  });
+  return res.choices[0]?.message?.content ?? '';
+}
+
 export async function llmReview(
   address: string,
   name: string | null,
   compiler: string | null,
   source: string,
 ): Promise<LlmPart> {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) throw new Error('ANTHROPIC_API_KEY is not set');
-
-  const client = new Anthropic({ apiKey });
-
-  const msg = await client.messages.create({
-    model: MODEL,
-    max_tokens: 1024,
-    system: SYSTEM,
-    messages: [
-      { role: 'user', content: buildPrompt(address, name ?? 'N/A', compiler ?? 'N/A', source) },
-      { role: 'assistant', content: '{' },
-    ],
-  });
-
-  const text = msg.content
-    .filter((b): b is Anthropic.TextBlock => b.type === 'text')
-    .map((b) => b.text)
-    .join('');
-
-  return parseReview('{' + text);
+  const provider = pickProvider();
+  const prompt = buildPrompt(address, name ?? 'N/A', compiler ?? 'N/A', source);
+  const raw = provider === 'anthropic' ? await viaAnthropic(prompt) : await viaOpenAI(prompt);
+  return parseReview(raw);
 }
 
 /** PORTED in spirit from generateSummary (224-230): pull the risk label out of the reply. */

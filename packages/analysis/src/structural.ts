@@ -10,7 +10,10 @@ import type { SourceCodeResult } from './etherscan.js';
 
 type AbiEntry = { type?: string; name?: string; stateMutability?: string };
 
-const OWNER_HINTS = /only(owner|admin|role)|_checkowner|accesscontrol|ownable/i;
+// Privileged-modifier vocabulary. `onlyOwner` alone is not enough: USDC's proxy
+// gates upgradeTo on `onlyAdmin`, MakerDAO uses `auth`, OZ v5 uses `_checkOwner`.
+const OWNER_HINTS =
+  /(only|if)(Owner|Admin|Role|Governance|Operator|Minter|Manager)|_checkOwner|AccessControl|Ownable|\bauth\b|require\s*\(\s*msg\.sender\s*==\s*(owner|admin)/i;
 const DANGEROUS = [
   'mint', 'burnfrom', 'pause', 'unpause', 'blacklist', 'setfee', 'settax',
   'withdraw', 'rescue', 'sweep', 'setmaxtx', 'excludefromfee', 'upgradeto',
