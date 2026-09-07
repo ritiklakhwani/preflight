@@ -1,0 +1,9 @@
+.env
+.env.*
+!.env.example
+node_modules
+.pgdata
+dist
+.next
+*.tsbuildinfo
+.DS_Store

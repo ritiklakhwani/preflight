@@ -1,0 +1,20 @@
+{
+  "name": "preflight",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.33.0",
+  "scripts": {
+    "build": "pnpm -r build",
+    "check": "tsc -b",
+    "test": "vitest run",
+    "db:up": "docker compose up -d",
+    "db:init": "docker compose exec -T db psql -U postgres -d preflight < packages/core/sql/schema.sql",
+    "analyse": "pnpm --filter @preflight/analysis exec tsx src/cli.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}
