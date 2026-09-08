@@ -49,6 +49,19 @@ export interface AnalysisResult {
    * of them misses half of what a signer needs to know.
    */
   implementationAddress: string | null;
+  /**
+   * Whether the ABI carries the ERC-20 surface. Market signals only mean
+   * something for tokens: "no Uniswap pool holds this" is a finding about a
+   * token and noise about a lending pool or an NFT contract.
+   */
+  isErc20: boolean;
+  /**
+   * False when the explorer has no creation record, which means the address is
+   * a wallet rather than a contract. Null when we could not check.
+   */
+  isContract: boolean | null;
+  /** The address that deployed this contract. Feeds deployer-history. */
+  creator: string | null;
   /** Function names gated on an owner/admin role, parsed from the ABI. */
   ownerOnlyFunctions: string[];
   hasSelfDestruct: boolean;

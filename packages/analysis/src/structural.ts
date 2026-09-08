@@ -21,13 +21,13 @@ const DANGEROUS = [
 
 export function structural(src: SourceCodeResult | null): Pick<
   AnalysisResult,
-  'verified' | 'contractName' | 'compilerVersion' | 'isProxy' |
-  'implementationAddress' | 'ownerOnlyFunctions' | 'hasSelfDestruct' | 'hasTransferRestrictions'
+  'verified' | 'contractName' | 'compilerVersion' | 'isProxy' | 'implementationAddress' |
+  'isErc20' | 'ownerOnlyFunctions' | 'hasSelfDestruct' | 'hasTransferRestrictions'
 > {
   if (!src) {
     return {
       verified: false, contractName: null, compilerVersion: null, isProxy: false,
-      implementationAddress: null,
+      implementationAddress: null, isErc20: false,
       ownerOnlyFunctions: [], hasSelfDestruct: false, hasTransferRestrictions: false,
     };
   }
@@ -49,12 +49,20 @@ export function structural(src: SourceCodeResult | null): Pick<
     ? src.Implementation
     : null;
 
+  // The ERC-20 surface. A proxy's own ABI will not have these even when the
+  // token behind it does, which mergeProxy resolves by OR-ing the two reads.
+  const abiNames = new Set(abi.map((e) => (e.name ?? '').toLowerCase()));
+  const isErc20 = ['transfer', 'balanceof', 'totalsupply', 'approve'].every((n) =>
+    abiNames.has(n),
+  );
+
   return {
     verified: true,
     contractName: src.ContractName || null,
     compilerVersion: src.CompilerVersion || null,
     isProxy: src.Proxy === '1' || /delegatecall|erc1967|transparentupgradeable/i.test(code),
     implementationAddress: implementation,
+    isErc20,
     ownerOnlyFunctions: OWNER_HINTS.test(code) ? ownerOnlyFunctions : [],
     hasSelfDestruct: /selfdestruct|suicide\s*\(/i.test(code),
     hasTransferRestrictions:
@@ -80,6 +88,7 @@ export function mergeProxy(proxy: Structural, impl: Structural): Structural {
     compilerVersion: impl.compilerVersion ?? proxy.compilerVersion,
     isProxy: true,
     implementationAddress: proxy.implementationAddress,
+    isErc20: proxy.isErc20 || impl.isErc20,
     ownerOnlyFunctions: [...new Set([...proxy.ownerOnlyFunctions, ...impl.ownerOnlyFunctions])],
     hasSelfDestruct: proxy.hasSelfDestruct || impl.hasSelfDestruct,
     hasTransferRestrictions: proxy.hasTransferRestrictions || impl.hasTransferRestrictions,

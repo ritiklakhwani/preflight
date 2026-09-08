@@ -3,8 +3,12 @@ import { fetchContractSource, fetchContractCreation } from './etherscan.js';
 import { structural, mergeProxy } from './structural.js';
 import { llmReview } from './llm.js';
 
-export { fetchContractSource, fetchContractCreation } from './etherscan.js';
-export type { SourceCodeResult } from './etherscan.js';
+export {
+  fetchContractSource,
+  fetchContractCreation,
+  fetchDeployerProfile,
+} from './etherscan.js';
+export type { SourceCodeResult, CreationResult, DeployerResult } from './etherscan.js';
 
 /**
  * The single entry point the rest of Preflight uses.
@@ -19,14 +23,28 @@ export async function analyse(address: string, chainId = 1): Promise<AnalysisRes
   let src = null;
   let fetchError: string | undefined;
 
-  try {
-    src = await fetchContractSource(address, chainId);
-  } catch (err) {
-    fetchError = err instanceof Error ? err.message : String(err);
-  }
+  // Independent calls, so they overlap. The creation record answers a question
+  // the source cannot: whether this address is a contract at all. An agent
+  // about to approve a wallet is in a different kind of trouble.
+  const [srcResult, creation] = await Promise.all([
+    fetchContractSource(address, chainId).catch((err: unknown) => {
+      fetchError = err instanceof Error ? err.message : String(err);
+      return null;
+    }),
+    fetchContractCreation(address, chainId),
+  ]);
+  src = srcResult;
 
   let base = structural(src);
   const notes: string[] = [];
+
+  const identity = {
+    isContract: creation.status === 'error' ? null : creation.status === 'contract',
+    creator: creation.status === 'contract' ? creation.creator : null,
+  };
+  if (creation.status === 'error') {
+    notes.push(`Creation record unavailable: ${creation.error}. Contract status unknown.`);
+  }
   // The proxy holds the upgrade authority; the implementation holds the
   // behaviour. Reading the proxy alone makes every upgradeable token look
   // inert, which covers most of the tokens anyone actually signs against.
@@ -53,6 +71,7 @@ export async function analyse(address: string, chainId = 1): Promise<AnalysisRes
   if (fetchError) {
     return {
       ...base,
+      ...identity,
       llmSummary: '',
       llmRiskLabel: 'Unknown',
       llmRiskNotes: [],
@@ -66,10 +85,11 @@ export async function analyse(address: string, chainId = 1): Promise<AnalysisRes
     // the reader to ignore the marker.
     return {
       ...base,
+      ...identity,
       llmSummary: '',
       llmRiskLabel: 'Unknown',
       llmRiskNotes: [],
-      notes: ['No verified source on this explorer, so no model review was attempted.'],
+      notes: [...notes, 'No verified source on this explorer, so no model review was attempted.'],
     };
   }
 
@@ -77,10 +97,11 @@ export async function analyse(address: string, chainId = 1): Promise<AnalysisRes
 
   try {
     const llm = await llmReview(address, base.contractName, base.compilerVersion, reviewSource);
-    return { ...base, ...llm, ...carried };
+    return { ...base, ...identity, ...llm, ...carried };
   } catch (err) {
     return {
       ...base,
+      ...identity,
       ...carried,
       llmSummary: '',
       llmRiskLabel: 'Unknown',
