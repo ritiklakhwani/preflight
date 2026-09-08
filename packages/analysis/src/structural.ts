@@ -22,11 +22,12 @@ const DANGEROUS = [
 export function structural(src: SourceCodeResult | null): Pick<
   AnalysisResult,
   'verified' | 'contractName' | 'compilerVersion' | 'isProxy' |
-  'ownerOnlyFunctions' | 'hasSelfDestruct' | 'hasTransferRestrictions'
+  'implementationAddress' | 'ownerOnlyFunctions' | 'hasSelfDestruct' | 'hasTransferRestrictions'
 > {
   if (!src) {
     return {
       verified: false, contractName: null, compilerVersion: null, isProxy: false,
+      implementationAddress: null,
       ownerOnlyFunctions: [], hasSelfDestruct: false, hasTransferRestrictions: false,
     };
   }
@@ -44,14 +45,43 @@ export function structural(src: SourceCodeResult | null): Pick<
     DANGEROUS.some((d) => n.toLowerCase().includes(d)),
   );
 
+  const implementation = /^0x[a-fA-F0-9]{40}$/.test(src.Implementation ?? '')
+    ? src.Implementation
+    : null;
+
   return {
     verified: true,
     contractName: src.ContractName || null,
     compilerVersion: src.CompilerVersion || null,
     isProxy: src.Proxy === '1' || /delegatecall|erc1967|transparentupgradeable/i.test(code),
+    implementationAddress: implementation,
     ownerOnlyFunctions: OWNER_HINTS.test(code) ? ownerOnlyFunctions : [],
     hasSelfDestruct: /selfdestruct|suicide\s*\(/i.test(code),
     hasTransferRestrictions:
       /require\s*\([^)]*(blacklist|blocked|banned|_canTransfer|tradingEnabled|isBot)/i.test(code),
+  };
+}
+
+type Structural = ReturnType<typeof structural>;
+
+/**
+ * Unions a proxy's structural facts with its implementation's.
+ *
+ * Reading only the proxy sees the upgrade authority and no behaviour. Reading
+ * only the implementation sees the behaviour and no upgrade authority. A
+ * signer needs both, so privileged functions are concatenated and the boolean
+ * risks are OR-ed. The proxy keeps naming rights because that is the address
+ * the user is actually about to interact with.
+ */
+export function mergeProxy(proxy: Structural, impl: Structural): Structural {
+  return {
+    verified: proxy.verified,
+    contractName: proxy.contractName,
+    compilerVersion: impl.compilerVersion ?? proxy.compilerVersion,
+    isProxy: true,
+    implementationAddress: proxy.implementationAddress,
+    ownerOnlyFunctions: [...new Set([...proxy.ownerOnlyFunctions, ...impl.ownerOnlyFunctions])],
+    hasSelfDestruct: proxy.hasSelfDestruct || impl.hasSelfDestruct,
+    hasTransferRestrictions: proxy.hasTransferRestrictions || impl.hasTransferRestrictions,
   };
 }
