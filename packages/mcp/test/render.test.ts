@@ -1,24 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { Verdict } from '@preflight/core';
 import { delimit, renderVerdict } from '../src/render.js';
-
-const verdict = (over: Partial<Verdict> = {}): Verdict => ({
-  id: 'abcd1234',
-  address: '0x0000000000000000000000000000000000000001',
-  chainId: 1,
-  severity: 'low',
-  score: 20,
-  summary: 'LOW (20/100).',
-  analysis: {
-    verified: true, contractName: 'Token', compilerVersion: 'v0.8.0', isProxy: false,
-    implementationAddress: null, ownerOnlyFunctions: [], hasSelfDestruct: false,
-    hasTransferRestrictions: false, llmSummary: '', llmRiskLabel: 'Unknown', llmRiskNotes: [],
-  },
-  signals: [],
-  taint: [],
-  createdAt: '2026-09-07T00:00:00.000Z',
-  ...over,
-});
+import { verdict } from '../../../test/fixtures.js';
 
 describe('delimit', () => {
   it('stops a value from closing its own tag', () => {

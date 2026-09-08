@@ -12,8 +12,12 @@
  *
  * So untrusted values are wrapped in a delimiter carrying a nonce the attacker
  * cannot predict, and the trailer tells the reader what the delimiter means.
- * Day 5 replaces the stripping here with @preflight/quarantine, which also
- * records what was caught and why. The boundary itself exists from day one.
+ *
+ * This is the egress half of the boundary. @preflight/quarantine handles
+ * ingress: it scans the same values as they arrive, records what matched, and
+ * seals contract source before the model reads it. Egress still strips here
+ * rather than trusting that, because this is the last code that runs before
+ * the text becomes model context.
  */
 import { randomBytes } from 'node:crypto';
 import type { Verdict } from '@preflight/core';
@@ -93,6 +97,18 @@ export function renderVerdict(v: Verdict, opts: { full?: boolean } = {}): string
   // than left to read a shallow verdict as a thorough one.
   for (const n of a.notes ?? []) out.push(`  note      ${n}`);
   out.push('');
+
+  if (v.taint.length > 0) {
+    out.push(
+      `QUARANTINE  ${v.taint.length} field(s) matched an injection rule at ingress`,
+    );
+    for (const t of v.taint) {
+      out.push(`  ${t.fieldPath}  from ${t.source}`);
+      out.push(`    rules: ${t.matchedRules.join(', ')}`);
+      out.push(`    raw:   ${mark(t.raw)}`);
+    }
+    out.push('');
+  }
 
   if (a.llmSummary) {
     out.push(

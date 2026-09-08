@@ -7,9 +7,16 @@
  * definition of what a verdict is.
  */
 import { randomUUID } from 'node:crypto';
-import { analyse } from '@preflight/analysis';
+import { analyse, fetchDeployerProfile } from '@preflight/analysis';
 import { score, type Verdict } from '@preflight/core';
-import { STRUCTURAL_SIGNALS, runSignals, type Signal, type SignalContext } from '@preflight/signals';
+import {
+  ALL_SIGNALS,
+  queryMarket,
+  runSignals,
+  type Signal,
+  type SignalContext,
+} from '@preflight/signals';
+import { scanFields, type Field } from '@preflight/quarantine';
 import { createStore, type VerdictStore } from './store.js';
 
 export { createStore } from './store.js';
@@ -48,10 +55,56 @@ export async function runPreflight(
   }
   const normalised = address.toLowerCase();
 
-  const analysis = await analyse(normalised, chainId);
-  const ctx: SignalContext = { address: normalised, chainId, analysis };
-  const signals = await runSignals(opts.signals ?? STRUCTURAL_SIGNALS, ctx);
+  // Two independent sources, fetched together. The context is assembled once
+  // and shared, so adding signals costs no extra network calls.
+  const [analysis, market] = await Promise.all([
+    analyse(normalised, chainId),
+    queryMarket(normalised, chainId),
+  ]);
+
+  // Depends on the creator, so it cannot join the batch above. Skipped
+  // entirely for wallets and for anything whose creation record we could not
+  // read, in which case the signal reports why rather than guessing.
+  const deployer = analysis.creator
+    ? await fetchDeployerProfile(analysis.creator, chainId)
+    : null;
+
+  const ctx: SignalContext = { address: normalised, chainId, analysis, market, deployer };
+  const signals = await runSignals(opts.signals ?? ALL_SIGNALS, ctx);
   const { score: value, severity } = score(signals);
+
+  // Ingress boundary. Every string below was written by the party under
+  // review and is on its way into an agent's context window. Scanning here
+  // rather than at render time means the finding travels with the verdict.
+  const marketFields: Field[] =
+    ctx.market.status === 'ok'
+      ? [
+          { path: 'market.symbol', value: ctx.market.market.symbol },
+          { path: 'market.name', value: ctx.market.market.name },
+          ...ctx.market.market.pools.flatMap((p, i) => [
+            { path: `market.pools[${i}].token0.symbol`, value: p.token0.symbol },
+            { path: `market.pools[${i}].token1.symbol`, value: p.token1.symbol },
+          ]),
+        ]
+      : [];
+
+  const taint = [
+    ...scanFields(
+      [
+        { path: 'analysis.contractName', value: analysis.contractName },
+        { path: 'analysis.ownerOnlyFunctions', value: analysis.ownerOnlyFunctions },
+      ],
+      'etherscan',
+    ),
+    ...scanFields(
+      [
+        { path: 'analysis.llmSummary', value: analysis.llmSummary },
+        { path: 'analysis.llmRiskNotes', value: analysis.llmRiskNotes },
+      ],
+      'model output',
+    ),
+    ...scanFields(marketFields, 'thegraph:uniswap-v3'),
+  ];
 
   const verdict: Verdict = {
     id: randomUUID().slice(0, 8),
@@ -62,8 +115,7 @@ export async function runPreflight(
     summary: summarise({ severity, score: value, signals }),
     analysis,
     signals,
-    // Populated by @preflight/quarantine on Day 5.
-    taint: [],
+    taint,
     createdAt: new Date().toISOString(),
   };
 
