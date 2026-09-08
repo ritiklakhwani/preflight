@@ -6,6 +6,13 @@ export interface Evidence {
   label: string;
   value: string;
   link?: string;
+  /**
+   * True when `value` carries data the reviewed contract's author controls: a
+   * contract name, an ABI function name, explorer metadata. Only these get
+   * delimited before they reach a model. Our own prose does not, because a
+   * marker applied to everything marks nothing.
+   */
+  untrusted?: boolean;
 }
 
 export interface SignalResult {
@@ -35,6 +42,13 @@ export interface AnalysisResult {
   contractName: string | null;
   compilerVersion: string | null;
   isProxy: boolean;
+  /**
+   * For a proxy, the implementation it currently delegates to. Structural
+   * checks are run against both and merged: the proxy holds the upgrade
+   * authority, the implementation holds the behaviour, and reading only one
+   * of them misses half of what a signer needs to know.
+   */
+  implementationAddress: string | null;
   /** Function names gated on an owner/admin role, parsed from the ABI. */
   ownerOnlyFunctions: string[];
   hasSelfDestruct: boolean;
@@ -44,6 +58,13 @@ export interface AnalysisResult {
   /** 2024 taxonomy carried forward: High Risk | Moderate Risk | Low Risk */
   llmRiskLabel: 'High Risk' | 'Moderate Risk' | 'Low Risk' | 'Unknown';
   llmRiskNotes: string[];
+  /**
+   * Non-fatal degradations, such as a proxy whose implementation could not be
+   * read. The verdict still stands but is shallower than usual, and the caller
+   * is told so rather than left to assume full coverage. Distinct from
+   * `error`, which means the analysis did not produce a usable result.
+   */
+  notes?: string[];
   error?: string;
 }
 
