@@ -7,7 +7,7 @@
     "build": "pnpm -r build",
     "check": "tsc -p tsconfig.json",
     "test": "vitest run",
-    "db:up": "docker compose up -d",
+    "db:up": "docker compose up -d --wait",
     "db:init": "docker compose exec -T db psql -U postgres -d preflight < packages/core/sql/schema.sql",
     "analyse": "node --env-file=.env --import tsx packages/analysis/src/cli.ts",
     "mcp": "node --env-file=.env --import tsx packages/mcp/src/index.ts"
