@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+#
+# Launcher for the Preflight MCP server.
+#
+# MCP clients are GUI applications. They do not inherit a login shell, so `node`
+# is usually absent from their PATH, and the working directory they spawn a
+# server in is not the repository. Both of those break the obvious
+# `node --import tsx ...` invocation in a way that surfaces only as a server
+# that silently fails to start.
+#
+# This script resolves the interpreter and the repository root itself, so the
+# client config needs nothing but a path to this file.
+#
+# Override the interpreter with PREFLIGHT_NODE if you need a specific one.
+
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+NODE="${PREFLIGHT_NODE:-$(command -v node || true)}"
+if [ -z "$NODE" ]; then
+  for candidate in "$HOME"/.nvm/versions/node/*/bin/node /opt/homebrew/bin/node /usr/local/bin/node; do
+    if [ -x "$candidate" ]; then NODE="$candidate"; break; fi
+  done
+fi
+if [ -z "$NODE" ]; then
+  echo "preflight-mcp: no node interpreter found. Set PREFLIGHT_NODE to its path." >&2
+  exit 127
+fi
+
+if [ ! -f "$ROOT/.env" ]; then
+  echo "preflight-mcp: $ROOT/.env is missing. Copy .env.example and fill in the keys." >&2
+  exit 1
+fi
+
+# cd so that `--import tsx` resolves against the repository's node_modules.
+cd "$ROOT"
+exec "$NODE" --env-file="$ROOT/.env" --import tsx "$ROOT/packages/mcp/src/index.ts" "$@"

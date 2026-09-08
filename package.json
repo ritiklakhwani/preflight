@@ -5,13 +5,15 @@
   "packageManager": "pnpm@10.33.0",
   "scripts": {
     "build": "pnpm -r build",
-    "check": "tsc -b",
+    "check": "tsc -p tsconfig.json",
     "test": "vitest run",
     "db:up": "docker compose up -d",
     "db:init": "docker compose exec -T db psql -U postgres -d preflight < packages/core/sql/schema.sql",
-    "analyse": "node --env-file=.env --import tsx packages/analysis/src/cli.ts"
+    "analyse": "node --env-file=.env --import tsx packages/analysis/src/cli.ts",
+    "mcp": "node --env-file=.env --import tsx packages/mcp/src/index.ts"
   },
   "devDependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "@types/node": "^22.10.2",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
