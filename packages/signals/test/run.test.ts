@@ -1,16 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { runSignals } from '../src/run.js';
-import type { Signal, SignalContext } from '../src/types.js';
+import type { Signal } from '../src/types.js';
+import { context } from '../../../test/fixtures.js';
 
-const ctx = {
-  address: '0x0000000000000000000000000000000000000001',
-  chainId: 1,
-  analysis: {
-    verified: true, contractName: 'T', compilerVersion: 'v0', isProxy: false,
-    implementationAddress: null, ownerOnlyFunctions: [], hasSelfDestruct: false,
-    hasTransferRestrictions: false, llmSummary: '', llmRiskLabel: 'Unknown', llmRiskNotes: [],
-  },
-} as SignalContext;
+const ctx = context();
 
 const ok: Signal = {
   name: 'ok', weight: 1, describe: '',

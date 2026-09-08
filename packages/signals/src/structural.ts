@@ -42,11 +42,22 @@ function notAssessable(ctx: SignalContext): Evidence[] {
 
 export const unverifiedSource: Signal = {
   name: 'unverified-source',
-  weight: 0.8,
+  weight: 0.5,
   describe: 'The contract has no verified source on the block explorer.',
   async run(ctx) {
     if (ctx.analysis.error) {
       return { fired: false, evidence: [], error: ctx.analysis.error };
+    }
+    // A wallet has no source by definition. Firing here would report a
+    // missing thing that was never supposed to exist, and it is not-a-contract
+    // that carries the real finding about this address.
+    if (ctx.analysis.isContract === false) {
+      return {
+        fired: false,
+        evidence: [
+          { label: 'source', value: 'not applicable, the address is a wallet rather than a contract' },
+        ],
+      };
     }
     if (ctx.analysis.verified) {
       return {
@@ -77,7 +88,7 @@ export const unverifiedSource: Signal = {
 
 export const privilegedControl: Signal = {
   name: 'privileged-control',
-  weight: 0.5,
+  weight: 0.2,
   describe:
     'A privileged role can change the contract or move funds: an upgradeable proxy, or owner-gated mint, pause, withdraw or fee functions.',
   async run(ctx) {
@@ -119,7 +130,7 @@ export const privilegedControl: Signal = {
 
 export const transferRestrictions: Signal = {
   name: 'transfer-restrictions',
-  weight: 0.4,
+  weight: 0.15,
   describe:
     'Transfers can be blocked for specific addresses or halted entirely: a blacklist, a trading gate, or a bot guard.',
   async run(ctx) {
@@ -142,7 +153,7 @@ export const transferRestrictions: Signal = {
 
 export const selfDestruct: Signal = {
   name: 'self-destruct',
-  weight: 0.6,
+  weight: 0.45,
   describe: 'The contract can destroy itself, stranding anything held or approved against it.',
   async run(ctx) {
     if (!ctx.analysis.verified) return { fired: false, evidence: notAssessable(ctx) };
