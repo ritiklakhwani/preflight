@@ -11,6 +11,12 @@ importers:
       '@modelcontextprotocol/sdk':
         specifier: ^1.30.0
         version: 1.30.0(zod@3.25.76)
+      '@preflight/core':
+        specifier: workspace:*
+        version: link:packages/core
+      '@preflight/signals':
+        specifier: workspace:*
+        version: link:packages/signals
       '@types/node':
         specifier: ^22.10.2
         version: 22.20.1
@@ -32,6 +38,9 @@ importers:
       '@preflight/core':
         specifier: workspace:*
         version: link:../core
+      '@preflight/quarantine':
+        specifier: workspace:*
+        version: link:../quarantine
       openai:
         specifier: ^4.77.0
         version: 4.104.0(zod@3.25.76)
@@ -46,6 +55,9 @@ importers:
       '@preflight/core':
         specifier: workspace:*
         version: link:../core
+      '@preflight/quarantine':
+        specifier: workspace:*
+        version: link:../quarantine
       '@preflight/signals':
         specifier: workspace:*
         version: link:../signals
@@ -72,8 +84,17 @@ importers:
         specifier: ^3.25.76
         version: 3.25.76
 
+  packages/quarantine:
+    dependencies:
+      '@preflight/core':
+        specifier: workspace:*
+        version: link:../core
+
   packages/signals:
     dependencies:
+      '@preflight/analysis':
+        specifier: workspace:*
+        version: link:../analysis
       '@preflight/core':
         specifier: workspace:*
         version: link:../core
