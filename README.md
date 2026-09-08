@@ -49,16 +49,19 @@ Everything after the `ethonline-2026-start` tag:
 git diff ethonline-2026-start..HEAD
 ```
 
-| Package | Status | What it does |
-|---|---|---|
-| `packages/core` | NEW | Shared types and the deterministic scoring function |
-| `packages/analysis` | PORTED + extended | Etherscan fetch, LLM review, **new** deterministic structural checks on the ABI |
-| `packages/signals` | NEW | Behavioural risk signals over The Graph standardized subgraphs |
-| `packages/quarantine` | NEW | Taint tracking and prompt-injection detection on untrusted on-chain strings |
-| `packages/gate` | NEW | Ledger confirmation service; Key Ring credential storage |
-| `packages/attest` | NEW | Hedera Consensus Service verdict log |
-| `packages/mcp` | NEW | The MCP server an agent installs |
-| `packages/console` | NEW | Live verdict stream and quarantine diff |
+| Package | Origin | State | What it does |
+|---|---|---|---|
+| `packages/core` | NEW | shipped | Shared types and the deterministic scoring function |
+| `packages/analysis` | PORTED + extended | shipped | Etherscan fetch and LLM review from 2024, plus **new** deterministic structural checks and proxy implementation resolution |
+| `packages/signals` | NEW | 4 of 8 shipped | Weighted risk signals. The four structural ones run today; the behavioural ones over The Graph land next |
+| `packages/engine` | NEW | shipped | Composes analysis, signals and scoring into one verdict, and persists it |
+| `packages/mcp` | NEW | shipped | The MCP server an agent installs. Three tools, with untrusted on-chain strings delimited before they reach a model |
+| `packages/quarantine` | NEW | planned | Taint tracking and prompt-injection detection on untrusted on-chain strings |
+| `packages/gate` | NEW | planned | Ledger confirmation service; Key Ring credential storage |
+| `packages/attest` | NEW | planned | Hedera Consensus Service verdict log |
+| `packages/console` | NEW | planned | Live verdict stream and quarantine diff |
+
+This table is updated as packages land, so what it claims and what runs stay the same thing.
 
 ---
 
@@ -87,9 +90,17 @@ hosted, and unguarded.
 ```bash
 cp .env.example .env    # fill in the keys
 pnpm install
-pnpm db:up && pnpm db:init
+pnpm db:up && pnpm db:init          # optional; without it verdicts stay in memory
 pnpm analyse 0x6B175474E89094C44Da98b954EedeAC495271d0F
 ```
+
+Then run it the way an agent does:
+
+```bash
+node --env-file=.env --import tsx scripts/mcp-smoke.ts 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48
+```
+
+To install it into Claude Desktop or Cursor, see [SKILL.md](./SKILL.md).
 
 ## AI tool usage
 
