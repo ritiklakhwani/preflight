@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { detect } from '../src/rules.js';
+import { LENGTH_BUDGET, detect } from '../src/rules.js';
 import { scanFields, scanValue } from '../src/scan.js';
 import { spotlight } from '../src/spotlight.js';
 
@@ -111,5 +111,29 @@ describe('spotlight', () => {
     const s = spotlight('x', 'source');
     expect(s.instruction).toContain(s.nonce);
     expect(s.instruction).not.toContain('contract Foo');
+  });
+});
+
+describe('length budgets', () => {
+  // A real model summary from a live run. It flagged itself as an attack until
+  // the prose budget was separated from the identifier one, because our own
+  // prompt asks for up to sixty words and the rule capped at 120 characters.
+  const realSummary =
+    'EaseTestToken is an ERC20 token allowing only the owner to facilitate token ' +
+    'transfers. It mints 1 billion tokens to a predefined address.';
+
+  it('does not flag a normal model summary as an attack', () => {
+    expect(realSummary.length).toBeGreaterThan(LENGTH_BUDGET.identifier);
+    expect(detect(realSummary, LENGTH_BUDGET.prose)).toEqual([]);
+  });
+
+  it('still flags a token name of the same length', () => {
+    // The same string in a name field is absurd and should fire.
+    expect(detect(realSummary).map((r) => r.id)).toContain('excess-length');
+  });
+
+  it('flags prose that blows past even the prose budget', () => {
+    const flood = 'a '.repeat(LENGTH_BUDGET.prose);
+    expect(detect(flood, LENGTH_BUDGET.prose).map((r) => r.id)).toContain('excess-length');
   });
 });

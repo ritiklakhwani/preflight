@@ -22,8 +22,25 @@ export interface Rule {
   /** What an operator reading a taint log needs to understand about the match. */
   describe: string;
   re?: RegExp;
-  test?: (value: string) => boolean;
+  test?: (value: string, maxLength: number) => boolean;
 }
+
+/**
+ * How long a field may legitimately be before its length is itself the payload.
+ * This is site-specific and getting it wrong produces false positives in the
+ * security layer, which is the worst place for them.
+ *
+ * A token name over 120 characters is carrying something. A model summary of
+ * 140 characters is a model summary: our own prompt asks for up to sixty words,
+ * which is roughly four hundred. The scanner flagged its own advisory paragraph
+ * as an attack until these were separated.
+ */
+export const LENGTH_BUDGET = {
+  /** Names, symbols, identifiers. Anything an explorer displays inline. */
+  identifier: 120,
+  /** Model output, which we asked to be prose. Sixty words plus headroom. */
+  prose: 600,
+} as const;
 
 /**
  * Solidity identifiers cannot contain spaces, so every payload published as a
@@ -113,8 +130,8 @@ export const RULES: Rule[] = [
   },
   {
     id: 'excess-length',
-    describe: 'Far longer than any real token name, so it is carrying a payload',
-    test: (v) => v.length > 120,
+    describe: 'Far longer than the field legitimately holds, so the length is the payload',
+    test: (v, maxLength) => v.length > maxLength,
   },
 ];
 
@@ -122,8 +139,8 @@ export const RULES: Rule[] = [
  * Every rule that matches, checked against the raw value and against its
  * identifier-normalised form. A payload only has to land once.
  */
-export function detect(value: string): Rule[] {
+export function detect(value: string, maxLength: number = LENGTH_BUDGET.identifier): Rule[] {
   const normalised = normaliseIdentifier(value);
-  const hit = (r: Rule, v: string) => (r.re ? r.re.test(v) : r.test!(v));
+  const hit = (r: Rule, v: string) => (r.re ? r.re.test(v) : r.test!(v, maxLength));
   return RULES.filter((r) => hit(r, value) || (normalised !== value && hit(r, normalised)));
 }

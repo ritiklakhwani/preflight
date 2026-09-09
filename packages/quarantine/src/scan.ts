@@ -11,7 +11,9 @@
  * can show what was caught, and the model prompt can be defended separately.
  */
 import type { TaintEvent } from '@preflight/core';
-import { detect } from './rules.js';
+import { LENGTH_BUDGET, detect } from './rules.js';
+
+export { LENGTH_BUDGET } from './rules.js';
 
 /** A field to check, named so the taint log points somewhere specific. */
 export interface Field {
@@ -28,9 +30,10 @@ export function scanValue(
   source: string,
   path: string,
   action: TaintEvent['action'] = 'delimited',
+  maxLength: number = LENGTH_BUDGET.identifier,
 ): TaintEvent | null {
   if (typeof value !== 'string' || value.length === 0) return null;
-  const matched = detect(value);
+  const matched = detect(value, maxLength);
   if (matched.length === 0) return null;
 
   return {
@@ -44,17 +47,21 @@ export function scanValue(
   };
 }
 
-export function scanFields(fields: Field[], source: string): TaintEvent[] {
+export function scanFields(
+  fields: Field[],
+  source: string,
+  maxLength: number = LENGTH_BUDGET.identifier,
+): TaintEvent[] {
   const events: TaintEvent[] = [];
   for (const f of fields) {
     if (Array.isArray(f.value)) {
       f.value.forEach((v, i) => {
-        const e = scanValue(v, source, `${f.path}[${i}]`);
+        const e = scanValue(v, source, `${f.path}[${i}]`, 'delimited', maxLength);
         if (e) events.push(e);
       });
       continue;
     }
-    const e = scanValue(f.value, source, f.path);
+    const e = scanValue(f.value, source, f.path, 'delimited', maxLength);
     if (e) events.push(e);
   }
   return events;
