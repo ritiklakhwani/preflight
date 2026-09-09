@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
   deployerHistory,
+  holderConcentration,
   liquidityReality,
   noMarket,
   notAContract,
   poolAge,
+  thinLiquidity,
 } from '../src/behavioural.js';
 import type { Pool } from '../src/graph.js';
 import { analysis, context, market } from '../../../test/fixtures.js';
@@ -90,18 +92,39 @@ describe('pool-age', () => {
 });
 
 describe('liquidity-reality', () => {
-  it('fires on large value that nothing has traded against', async () => {
-    // The demo asset, in miniature: a pool holding a fortune that four
-    // transactions have ever touched.
+  const thinlyHeld = { status: 'ok' as const, sampled: 13, uniqueAddresses: 6 };
+
+  it('fires on large value that nothing has traded against, held by almost nobody', () => {
+    // The demo asset. $1.1T locked, four transactions ever, six addresses
+    // across its last thirteen transfers.
+    return expect(
+      liquidityReality
+        .run(
+          context({
+            holders: thinlyHeld,
+            market: market({
+              pools: [pool({ totalValueLockedUSD: 1_110_167_010_696, txCount: 4, volumeUSD: 0 })],
+            }),
+          }),
+        )
+        .then((r) => r.fired),
+    ).resolves.toBe(true);
+  });
+
+  it('does not fire when the token is widely held, however quiet the pool', async () => {
+    // sUSDat. A staking wrapper acquired by staking rather than swapping, so
+    // its pool sits untraded while 1,259 people hold it. Identical pool shape
+    // to the case above; opposite meaning. Without this it scored HIGH 90.
     const r = await liquidityReality.run(
       context({
+        holders: { status: 'ok', sampled: 100, uniqueAddresses: 45 },
         market: market({
-          pools: [pool({ totalValueLockedUSD: 1_110_167_010_696, txCount: 4, volumeUSD: 0 })],
+          pools: [pool({ totalValueLockedUSD: 10_239_570, txCount: 12, volumeUSD: 0 })],
         }),
       }),
     );
-    expect(r.fired).toBe(true);
-    expect(r.evidence[0]!.label).toBe('dormant capital');
+    expect(r.fired).toBe(false);
+    expect(r.evidence.some((e) => e.value.includes('unused'))).toBe(true);
   });
 
   it('does not fire on a real pool that reports zero tracked volume', async () => {
@@ -110,6 +133,7 @@ describe('liquidity-reality', () => {
     // would flag this. Transaction count is what separates it.
     const r = await liquidityReality.run(
       context({
+        holders: thinlyHeld,
         market: market({
           pools: [pool({ totalValueLockedUSD: 18_670_643, volumeUSD: 0, txCount: 8_684_384 })],
         }),
@@ -121,6 +145,7 @@ describe('liquidity-reality', () => {
   it('does not fire on a young quiet pool, which is pool-age territory', async () => {
     const r = await liquidityReality.run(
       context({
+        holders: thinlyHeld,
         market: market({
           pools: [pool({ createdAtTimestamp: now() - DAY, txCount: 2, totalValueLockedUSD: 50_000 })],
         }),
@@ -128,13 +153,67 @@ describe('liquidity-reality', () => {
     );
     expect(r.fired).toBe(false);
   });
+});
 
-  it('fires when the deepest pool is too thin to exit against', async () => {
-    const r = await liquidityReality.run(
+describe('thin-liquidity', () => {
+  it('fires when the deepest pool is too small to exit against', async () => {
+    const r = await thinLiquidity.run(
       context({ market: market({ pools: [pool({ totalValueLockedUSD: 900 })] }) }),
     );
     expect(r.fired).toBe(true);
-    expect(r.evidence[0]!.label).toBe('thin liquidity');
+  });
+
+  it('says it is a routing problem rather than evidence of fraud', async () => {
+    // FDUSD. A real stablecoin, 4,252 holders, whose deepest Uniswap V3 pool
+    // on Ethereum holds $1,092 because its market lives elsewhere. At the old
+    // weight of 0.85 this alone produced HIGH, above an unverified
+    // three-holder token. It is worth 0.3 and a sentence, not a stop.
+    const r = await thinLiquidity.run(
+      context({
+        market: market({ pools: [pool({ totalValueLockedUSD: 1_092, txCount: 4_317 })] }),
+      }),
+    );
+    expect(r.fired).toBe(true);
+    expect(thinLiquidity.weight).toBeLessThan(0.5);
+    expect(r.evidence.some((e) => e.value.includes('not evidence of fraud'))).toBe(true);
+  });
+
+  it('does not fire on a deep pool', async () => {
+    const r = await thinLiquidity.run(context({ market: market({ pools: [pool()] }) }));
+    expect(r.fired).toBe(false);
+  });
+});
+
+describe('holder-concentration', () => {
+  const held = (uniqueAddresses: number, sampled = 100) =>
+    context({ holders: { status: 'ok', sampled, uniqueAddresses } });
+
+  it('fires on transfers circulating among a closed set', async () => {
+    // MEX: a hundred transfers among eight addresses, which is how a $104m
+    // volume figure gets manufactured without anyone buying the token.
+    expect((await holderConcentration.run(held(8))).fired).toBe(true);
+  });
+
+  it('does not fire on a distributed token', async () => {
+    expect((await holderConcentration.run(held(57))).fired).toBe(false);
+  });
+
+  it('fires on a token almost nobody has touched', async () => {
+    expect((await holderConcentration.run(held(7, 15))).fired).toBe(true);
+  });
+
+  it('reports inconclusive rather than damning when there are no transfers', async () => {
+    // On an unverified contract, no ERC-20 transfers may mean it is not a
+    // token at all. We cannot tell from here, so we do not claim to.
+    const r = await holderConcentration.run(held(0, 0));
+    expect(r.fired).toBe(false);
+    expect(r.error).toBeDefined();
+  });
+
+  it('does not apply to something that is not a token', async () => {
+    const r = await holderConcentration.run(context({ holders: null }));
+    expect(r.fired).toBe(false);
+    expect(r.error).toBeUndefined();
   });
 });
 

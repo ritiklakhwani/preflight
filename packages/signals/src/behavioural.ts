@@ -211,19 +211,26 @@ export const poolAge: Signal = {
  * tracks volume for whitelisted pairs, so WBTC/USDC on Arbitrum reports $0
  * volume against 8.6 million real transactions. Transaction count separates
  * those cleanly where volume does not.
+ *
+ * A dormant pool also has to be read against who holds the token, because the
+ * same pool shape means two different things. sUSDat is a staking wrapper: you
+ * acquire it by staking, not by swapping, so its pool sits untraded while
+ * 1,259 people hold it. That is an unused venue. ease.org has six addresses
+ * across its last thirteen transfers, and that is fabricated value. Both show
+ * eight-figure sums and single-digit trades.
+ *
+ *   ease.org   6 unique addresses per 13 transfers   fires
+ *   sUSDat    45 unique per 100                      does not
  */
 const DORMANT_MIN_TVL = 10_000;
 const DORMANT_MAX_TX = 25;
 const DORMANT_MIN_AGE_DAYS = 7;
 
-/** Below this, a position of any size cannot be exited at a sane price. */
-const EXIT_FLOOR_TVL = 5_000;
-
 export const liquidityReality: Signal = {
   name: 'liquidity-reality',
   weight: 0.85,
   describe:
-    'The pool backing this token does not hold what it appears to. Either the locked value has sat untraded, or there is too little of it to exit a position against.',
+    'Value is locked in this token\'s deepest pool that almost nothing has ever traded against, so the liquidity is reported rather than usable.',
   async run(ctx) {
     const g = guardMarket(ctx);
     if ('skip' in g) return g.skip;
@@ -239,9 +246,16 @@ export const liquidityReality: Signal = {
     const age = daysOld(deepest.createdAtTimestamp);
     const perTx = deepest.txCount > 0 ? tvl / deepest.txCount : tvl;
 
+    // A widely held token with a quiet pool is a venue nobody uses, not value
+    // that was never real.
+    const widelyHeld =
+      ctx.holders?.status === 'ok' && ctx.holders.uniqueAddresses >= MIN_UNIQUE_ADDRESSES;
+
     const dormant =
-      tvl >= DORMANT_MIN_TVL && age >= DORMANT_MIN_AGE_DAYS && deepest.txCount < DORMANT_MAX_TX;
-    const unexitable = tvl > 0 && tvl < EXIT_FLOOR_TVL;
+      tvl >= DORMANT_MIN_TVL &&
+      age >= DORMANT_MIN_AGE_DAYS &&
+      deepest.txCount < DORMANT_MAX_TX &&
+      !widelyHeld;
 
     if (dormant) {
       return {
@@ -261,33 +275,148 @@ export const liquidityReality: Signal = {
       };
     }
 
-    if (unexitable) {
+    const evidence: Evidence[] = [
+      {
+        label: 'liquidity',
+        value: `${usd(tvl)} locked, ${deepest.txCount.toLocaleString('en-US')} transactions, ${usd(perTx)} per transaction`,
+        link: poolLink(ctx, deepest.id),
+      },
+    ];
+    if (widelyHeld && deepest.txCount < DORMANT_MAX_TX) {
+      evidence.push({
+        label: 'reading',
+        value:
+          'the pool is quiet but the token is widely held, so this venue is unused rather than the value being unreal',
+      });
+    }
+    return { fired: false, evidence };
+  },
+};
+
+/** Below this, a position of any size cannot be exited at a sane price. */
+const EXIT_FLOOR_TVL = 5_000;
+
+/**
+ * Split out of liquidity-reality, at a much lower weight, because it was
+ * producing the worst kind of false positive.
+ *
+ * Thin liquidity says nothing about whether a token is a fraud. It says a
+ * swap routed here will be destroyed by slippage. Those are different claims
+ * and only the second one is supportable from this data.
+ *
+ * FDUSD is the case that forced this. A real stablecoin, 4,252 holders,
+ * $220m market cap, whose deepest Uniswap V3 pool on Ethereum holds $1,092
+ * because its market lives on other venues. It scored HIGH 90, above an
+ * unverified three-holder token deployed two days earlier. sUSDat, $74m and
+ * 1,259 holders, scored the same.
+ *
+ * At 0.3 the honest statement survives at the honest severity: report it to
+ * the user, do not stop the agent.
+ */
+export const thinLiquidity: Signal = {
+  name: 'thin-liquidity',
+  weight: 0.3,
+  describe:
+    'The deepest pool holding this token is too small to swap against without severe slippage. A statement about this venue, not about the token.',
+  async run(ctx) {
+    const g = guardMarket(ctx);
+    if ('skip' in g) return g.skip;
+    const deepest = g.pools[0];
+    if (!deepest) {
+      return { fired: false, evidence: [{ label: 'depth', value: 'no pool; see no-market' }] };
+    }
+
+    const tvl = deepest.totalValueLockedUSD;
+    if (tvl > 0 && tvl < EXIT_FLOOR_TVL) {
       return {
         fired: true,
         evidence: [
           {
-            label: 'thin liquidity',
-            value: `deepest pool holds ${usd(tvl)}, below the floor at which a position can be exited`,
+            label: 'depth',
+            value: `deepest pool holds ${usd(tvl)} across ${deepest.txCount.toLocaleString('en-US')} transactions; a position of any size cannot be exited here`,
             link: poolLink(ctx, deepest.id),
+          },
+          {
+            label: 'reading',
+            value:
+              'the token may trade elsewhere. This is a routing problem, not evidence of fraud',
           },
         ],
       };
     }
-
     return {
       fired: false,
-      evidence: [
-        {
-          label: 'liquidity',
-          value: `${usd(tvl)} locked, ${deepest.txCount.toLocaleString('en-US')} transactions, ${usd(perTx)} per transaction`,
-          link: poolLink(ctx, deepest.id),
-        },
-      ],
+      evidence: [{ label: 'depth', value: `${usd(tvl)} in the deepest pool`, link: poolLink(ctx, deepest.id) }],
     };
   },
 };
 
+/**
+ * Below this many distinct addresses, the token is not distributed, whatever
+ * its transfer count says.
+ *
+ * Confirmed by hand on 2026-09-09 against tokens whose character was checked
+ * on the explorer. Unique addresses across the last 100 transfers:
+ *
+ *   FDUSD   57   real, 4,252 holders
+ *   sUSDat  45   real, 1,259 holders
+ *   ONJAI   11   dead, 9 holders
+ *   MEX      8   dead, 14 holders
+ *   DOTT     7   throwaway, 3 holders
+ *
+ * The gap between 11 and 45 has nothing in it, so the threshold sits in the
+ * middle of a wide empty band rather than being tuned to a boundary.
+ */
+const MIN_UNIQUE_ADDRESSES = 20;
 
+export const holderConcentration: Signal = {
+  name: 'holder-concentration',
+  weight: 0.5,
+  describe:
+    'Almost nobody holds this token. Its transfers circulate among a handful of addresses, which is how volume gets manufactured without anyone buying.',
+  async run(ctx) {
+    if (!ctx.holders) {
+      return {
+        fired: false,
+        evidence: [{ label: 'distribution', value: 'not applicable, the address is not a token' }],
+      };
+    }
+    if (ctx.holders.status === 'error') {
+      return { fired: false, evidence: [], error: `holder history: ${ctx.holders.error}` };
+    }
+
+    const { sampled, uniqueAddresses } = ctx.holders;
+    if (sampled === 0) {
+      // No ERC-20 transfers at all. On a verified token that means nobody
+      // holds it; on an unverified contract it may simply not be a token.
+      // Either way we cannot tell from here, so we do not claim to.
+      return {
+        fired: false,
+        evidence: [],
+        error: 'no token transfers on record, so distribution could not be assessed',
+      };
+    }
+
+    const evidence: Evidence[] = [
+      {
+        label: 'distribution',
+        value: `${uniqueAddresses} distinct addresses across the last ${sampled} transfers`,
+      },
+    ];
+
+    if (uniqueAddresses < MIN_UNIQUE_ADDRESSES) {
+      evidence.push({
+        label: 'reading',
+        value:
+          sampled >= 50
+            ? 'transfers circulating among a closed set, which manufactures volume without buyers'
+            : 'too few holders for a market to exist',
+      });
+      return { fired: true, evidence };
+    }
+    return { fired: false, evidence };
+  },
+};
 
 /**
  * Thresholds for deployer-history.
@@ -303,7 +432,12 @@ const PROLIFIC_DEPLOYMENTS = 3;
 
 export const deployerHistory: Signal = {
   name: 'deployer-history',
-  weight: 0.6,
+  // 0.55 rather than 0.6 deliberately. At 0.6 this signal alone lands exactly
+  // on the HIGH boundary, so a new-ish address with three contracts would stop
+  // an agent and demand a hardware press on its own. It has also never fired
+  // in the benchmark, so we have no measurement of its false-positive rate. A
+  // signal with no observed behaviour should not sit on a threshold.
+  weight: 0.55,
   describe:
     'The address that deployed this contract is itself new and has already shipped several other contracts, which is the shape of a factory rather than a project.',
   async run(ctx) {
@@ -351,7 +485,9 @@ export const deployerHistory: Signal = {
 export const BEHAVIOURAL_SIGNALS: Signal[] = [
   notAContract,
   deployerHistory,
+  holderConcentration,
   noMarket,
   poolAge,
+  thinLiquidity,
   liquidityReality,
 ];
