@@ -4,8 +4,10 @@
 
 Preflight scores a contract on what it has actually done on-chain, not on what its source
 code claims. When the verdict is bad, the approval does not resolve in software: it goes to
-a Ledger device for a physical press. Every verdict is written to Hedera Consensus Service,
-so anyone can verify it without running this code.
+a Ledger device for a physical press.
+
+It reads Uniswap V3 pool state through The Graph across Ethereum, Arbitrum and Base, and it
+ships as an MCP server, so the check happens inside the agent that was about to sign.
 
 ---
 
@@ -53,12 +55,11 @@ git diff ethonline-2026-start..HEAD
 |---|---|---|---|
 | `packages/core` | NEW | shipped | Shared types and the deterministic scoring function |
 | `packages/analysis` | PORTED + extended | shipped | Etherscan fetch and LLM review from 2024, plus **new** deterministic structural checks and proxy implementation resolution |
-| `packages/signals` | NEW | 4 of 8 shipped | Weighted risk signals. The four structural ones run today; the behavioural ones over The Graph land next |
+| `packages/signals` | NEW | shipped | Nine weighted signals. Four read the contract, five read Uniswap V3 market history through The Graph |
 | `packages/engine` | NEW | shipped | Composes analysis, signals and scoring into one verdict, and persists it |
 | `packages/mcp` | NEW | shipped | The MCP server an agent installs. Three tools, with untrusted on-chain strings delimited before they reach a model |
-| `packages/quarantine` | NEW | planned | Taint tracking and prompt-injection detection on untrusted on-chain strings |
+| `packages/quarantine` | NEW | shipped | Injection detection on untrusted on-chain strings, and prompt spotlighting before a model reads contract source |
 | `packages/gate` | NEW | planned | Ledger confirmation service; Key Ring credential storage |
-| `packages/attest` | NEW | planned | Hedera Consensus Service verdict log |
 | `packages/console` | NEW | planned | Live verdict stream and quarantine diff |
 
 This table is updated as packages land, so what it claims and what runs stay the same thing.
@@ -101,6 +102,25 @@ node --env-file=.env --import tsx scripts/mcp-smoke.ts 0xA0b86991c6218b36c1d19D4
 ```
 
 To install it into Claude Desktop or Cursor, see [SKILL.md](./SKILL.md).
+
+### Chain coverage
+
+Ethereum, Arbitrum and Base. One query shape runs against all three, since
+Uniswap deploys identical subgraph code per chain and only the subgraph id
+changes.
+
+Coverage on Base is partial, and by billing rather than by bug: Etherscan's free
+tier serves contract source there but not creation records, so `not-a-contract`
+and `deployer-history` cannot run and report so. The verdict is computed from
+the seven checks that did complete, and the response says which ones did not.
+When fewer than 60% of checks complete, Preflight returns an error instead of a
+verdict rather than let an outage read as a clean bill of health.
+
+### Verifying the risk model
+
+The weights are a claim about how much each finding matters on its own. See
+[docs/verifying-weights.md](./docs/verifying-weights.md) for how to check them,
+plus `scripts/weights.ts` and `scripts/benchmark.ts`.
 
 ## AI tool usage
 
