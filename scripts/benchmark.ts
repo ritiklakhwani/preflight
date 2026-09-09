@@ -35,6 +35,8 @@ const pause = () => new Promise((r) => setTimeout(r, PAUSE_MS));
 const store = await createStore();
 let overshoot = 0;
 let undershoot = 0;
+const firedBy = new Map<string, number>();
+const ranBy = new Map<string, number>();
 
 console.log(
   '\n  ' + 'address'.padEnd(20) + 'expect'.padEnd(9) + 'actual'.padEnd(9) + 'score  fired',
@@ -50,6 +52,10 @@ for (const c of cases) {
     const v = await runPreflight(c.address, c.chainId, { store });
     const fired = v.signals.filter((s) => s.fired).map((s) => s.name);
     const errored = v.coverage.total - v.coverage.ran;
+    for (const sig of v.signals) {
+      if (!sig.error) ranBy.set(sig.name, (ranBy.get(sig.name) ?? 0) + 1);
+      if (sig.fired) firedBy.set(sig.name, (firedBy.get(sig.name) ?? 0) + 1);
+    }
     const delta = RANK[v.severity] - RANK[c.expect];
     const flag = delta > 0 ? 'OVER ' : delta < 0 ? 'under' : '  ok ';
     if (delta > 0) overshoot++;
@@ -79,5 +85,31 @@ console.log(
 );
 console.log('  A false positive on a blue chip is the expensive failure: it is the one');
 console.log('  that gets Preflight uninstalled. Fix those before tuning anything else.\n');
+
+/**
+ * Agreement with the labels means nothing if most signals never ran hot. This
+ * table is the honest limit of the set above, and the zeros are the point:
+ * a signal that has never fired has no measured false-positive rate, so its
+ * weight is an assertion rather than a finding.
+ */
+console.log('  SIGNAL COVERAGE\n');
+console.log('  ' + 'signal'.padEnd(24) + 'ran'.padStart(5) + 'fired'.padStart(7) + '   evidence');
+console.log('  ' + '-'.repeat(70));
+const names = [...ranBy.keys()].sort(
+  (a, b) => (firedBy.get(b) ?? 0) - (firedBy.get(a) ?? 0) || a.localeCompare(b),
+);
+let untested = 0;
+for (const n of names) {
+  const f = firedBy.get(n) ?? 0;
+  if (f === 0) untested++;
+  console.log(
+    '  ' + n.padEnd(24) + String(ranBy.get(n) ?? 0).padStart(5) + String(f).padStart(7) +
+      '   ' + (f === 0 ? 'NONE - weight is unmeasured' : ''),
+  );
+}
+console.log(
+  `\n  ${untested} of ${names.length} signals never fired in this set. Until they do, their` +
+    `\n  weights are assertions. Add cases that exercise them before tuning them.\n`,
+);
 
 await store.close();

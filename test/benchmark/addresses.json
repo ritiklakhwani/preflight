@@ -1,16 +1,124 @@
 {
-  "note": "Labelled addresses for weight calibration. `expect` is the worst band this address should produce. A blue chip scoring above its label is a false positive, which is the failure mode that makes a security tool unusable. Add known-bad addresses as you find them; see docs/verifying-weights.md for where to source them.",
+  "note": "Labelled addresses for weight calibration. `expect` is the worst band this address should produce. A blue chip scoring above its label is a false positive, which is the failure mode that makes a security tool unusable. Add known-bad addresses as you find them; see docs/verifying-weights.md for where to source them. Cases below ease.org were confirmed by hand on the explorer on 2026-09-09: holder count, market cap, price and website checked before labelling. Nothing here was labelled from a model's guess.",
   "cases": [
-    { "address": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2", "chainId": 1, "label": "WETH", "expect": "low", "why": "canonical wrapped ether, no admin" },
-    { "address": "0x6B175474E89094C44Da98b954EedeAC495271d0F", "chainId": 1, "label": "DAI", "expect": "low", "why": "auth-gated mint is real centralisation but not a risk to a signer" },
-    { "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", "chainId": 1, "label": "USDC", "expect": "medium", "why": "upgradeable proxy and can blacklist a holder" },
-    { "address": "0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984", "chainId": 1, "label": "UNI", "expect": "low", "why": "governance token, no privileged transfer path" },
-    { "address": "0x514910771AF9Ca656af840dff83E8264EcF986CA", "chainId": 1, "label": "LINK", "expect": "low", "why": "established, widely held" },
-    { "address": "0x7Fc66500c84A76Ad7e9c93437bFc5Ac33E2DDaE9", "chainId": 1, "label": "AAVE", "expect": "low", "why": "established governance token" },
-    { "address": "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599", "chainId": 1, "label": "WBTC", "expect": "medium", "why": "custodial, mint and pause behind an owner" },
-    { "address": "0xdAC17F958D2ee523a2206206994597C13D831ec7", "chainId": 1, "label": "USDT", "expect": "medium", "why": "owner can pause and blacklist" },
-    { "address": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831", "chainId": 42161, "label": "USDC on Arbitrum", "expect": "medium", "why": "same contract family, different chain" },
-    { "address": "0x160de4468586B6B2F8a92FEB0c260fc6cFC743B1", "chainId": 1, "label": "ease.org", "expect": "high", "why": "$1.1T reported TVL against 4 lifetime transactions" },
-    { "address": "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045", "chainId": 1, "label": "vitalik.eth", "expect": "medium", "why": "a wallet, not a contract" }
+    {
+      "address": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+      "chainId": 1,
+      "label": "WETH",
+      "expect": "clean",
+      "why": "immutable, no owner, no upgrade path, nothing to flag"
+    },
+    {
+      "address": "0x6B175474E89094C44Da98b954EedeAC495271d0F",
+      "chainId": 1,
+      "label": "DAI",
+      "expect": "low",
+      "why": "auth-gated mint is real centralisation but not a risk to a signer"
+    },
+    {
+      "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+      "chainId": 1,
+      "label": "USDC",
+      "expect": "low",
+      "why": "upgradeable and can blacklist, but privileged control is near-universal among legitimate tokens so it carries little discriminative signal. The evidence still names it"
+    },
+    {
+      "address": "0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984",
+      "chainId": 1,
+      "label": "UNI",
+      "expect": "low",
+      "why": "governance token, no privileged transfer path"
+    },
+    {
+      "address": "0x514910771AF9Ca656af840dff83E8264EcF986CA",
+      "chainId": 1,
+      "label": "LINK",
+      "expect": "clean",
+      "why": "plain ERC-677, no privileged functions"
+    },
+    {
+      "address": "0x7Fc66500c84A76Ad7e9c93437bFc5Ac33E2DDaE9",
+      "chainId": 1,
+      "label": "AAVE",
+      "expect": "low",
+      "why": "established governance token"
+    },
+    {
+      "address": "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599",
+      "chainId": 1,
+      "label": "WBTC",
+      "expect": "low",
+      "why": "custodial, transfer guarded by whenNotPaused. Fires transfer-restrictions since the pause fix"
+    },
+    {
+      "address": "0xdAC17F958D2ee523a2206206994597C13D831ec7",
+      "chainId": 1,
+      "label": "USDT",
+      "expect": "low",
+      "why": "owner can pause and blacklist. Same reasoning as USDC: reported, not escalated"
+    },
+    {
+      "address": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+      "chainId": 42161,
+      "label": "USDC on Arbitrum",
+      "expect": "low",
+      "why": "same contract family as mainnet USDC, same reading"
+    },
+    {
+      "address": "0x160de4468586B6B2F8a92FEB0c260fc6cFC743B1",
+      "chainId": 1,
+      "label": "ease.org",
+      "expect": "high",
+      "why": "$1.1T reported TVL against 4 lifetime transactions"
+    },
+    {
+      "address": "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
+      "chainId": 1,
+      "label": "vitalik.eth",
+      "expect": "medium",
+      "why": "a wallet, not a contract"
+    },
+    {
+      "address": "0xc5f0f7b66764F6ec8C8Dff7BA683102295E16409",
+      "chainId": 1,
+      "label": "FDUSD",
+      "expect": "medium",
+      "why": "real stablecoin, $220m cap, 4,252 holders, verified by hand 2026-09-09. Deepest V3 pool on Ethereum holds $1,092 because its market is elsewhere, so thin-liquidity fires. A routing warning, not a fraud finding"
+    },
+    {
+      "address": "0xD166337499E176bbC38a1FBd113Ab144e5bd2Df7",
+      "chainId": 1,
+      "label": "sUSDat",
+      "expect": "low",
+      "why": "real staking wrapper, $74m cap, 1,259 holders, saturn.credit. Pool is quiet because you acquire it by staking rather than swapping"
+    },
+    {
+      "address": "0x6E8B146AF16429b037ecE5943F3c0E5f412ddFA7",
+      "chainId": 1,
+      "label": "MEX",
+      "expect": "high",
+      "why": "14 holders, no price, no market cap. $104m of claimed volume through a pool circulating among 8 addresses"
+    },
+    {
+      "address": "0xdd204ff915462B41093cb1bF6f991DbD9515AC1d",
+      "chainId": 1,
+      "label": "ONJAI",
+      "expect": "high",
+      "why": "9 holders, no price. $35m of claimed volume, $1,784 left in the pool"
+    },
+    {
+      "address": "0x27c4D500d5db8c9112aE3847beB8042fE3413BdE",
+      "chainId": 1,
+      "label": "DOTT",
+      "expect": "high",
+      "why": "3 holders, unverified source, pool two days old, 10,000 total supply"
+    },
+    {
+      "address": "0xf80FC1ce16cBCBD18421E9Cd055CA1Bb58A9E097",
+      "chainId": 1,
+      "label": "ETHM",
+      "expect": "high",
+      "why": "real project at mappedswap.io but 10 holders and $21m of reported TVL against 7 transactions. The same mispriced-TVL artifact as ease.org, kept as an honest edge case"
+    }
   ]
 }

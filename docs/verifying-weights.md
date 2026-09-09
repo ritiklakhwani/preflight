@@ -64,11 +64,57 @@ have no privileged functions and no upgrade path, so the label was wrong, not
 the model. USDC scoring `low` when you believe a blacklistable upgradeable token
 deserves `medium` is a real disagreement about the weights.
 
-The benchmark found a real defect the first time it ran: UNI scored `clean`
-because the privileged-modifier pattern matched `msg.sender == owner` and
-`msg.sender == admin` but not `msg.sender == minter`, which is how UNI gates
-`mint`. Enumerating role names missed a role. The pattern now matches the
-construct instead.
+### What this found
+
+Three defects, none of which were visible from reading the code.
+
+**UNI scored `clean`.** The privileged-modifier pattern matched
+`msg.sender == owner` and `msg.sender == admin` but not `msg.sender == minter`,
+which is how UNI gates `mint`. Enumerating role names missed a role.
+
+**WBTC did not fire `transfer-restrictions`.** Its `transfer` is guarded by
+OpenZeppelin's `whenNotPaused` and an owner can call `pause`, freezing every
+holder at once. The pattern only looked for blacklist-shaped words, so USDC and
+USDT fired it and WBTC did not. Same mistake as UNI: enumerating vocabulary
+instead of matching the construct.
+
+**The model was inverted, and this is the one that mattered.** Adding
+non-blue-chip addresses exposed it immediately:
+
+| Token | What it is | Scored | Should be |
+|---|---|---|---|
+| FDUSD | Real stablecoin, $220m, 4,252 holders | HIGH 90 | MEDIUM |
+| sUSDat | Real staking wrapper, $74m, 1,259 holders | HIGH 90 | LOW |
+| DOTT | Unverified, 3 holders, two days old | MEDIUM 50 | HIGH |
+
+Two real stablecoins ranked as more dangerous than an unverified throwaway.
+The cause was `liquidity-reality` carrying two claims under one weight. Its
+thin-liquidity branch fired on total value locked alone, with nothing
+corroborating, and FDUSD's deepest Uniswap V3 pool on Ethereum holds $1,092
+because its market lives on other venues.
+
+Two changes fixed it. The thin branch became its own signal at 0.3, since "a
+swap routed here will be destroyed by slippage" is a true statement about a
+venue and not evidence of fraud. And `holder-concentration` was added, because
+distribution is what separates the cases that otherwise look identical:
+
+| Token | Unique addresses per 100 transfers | Character |
+|---|---|---|
+| FDUSD | 57 | real |
+| sUSDat | 45 | real |
+| ONJAI | 11 | dead, 9 holders |
+| MEX | 8 | dead, 14 holders |
+| ease.org | 6 | fabricated value |
+| DOTT | 7 | throwaway, 3 holders |
+
+The gap between 11 and 45 has nothing in it, so the threshold sits in the
+middle of a wide empty band rather than tuned to a boundary. Etherscan's
+holder-count endpoint is Pro-only; transfer history is free and answers the
+same question.
+
+None of this was reachable from the blue-chip set. Nine well-known tokens
+agreeing with their labels is the trivial case, and it hid an inversion that a
+judge typing a real stablecoin into the demo would have hit on the first try.
 
 Etherscan's free tier allows five calls a second and one verdict makes up to
 five, so the runner pauses between addresses. Without that pause the run
