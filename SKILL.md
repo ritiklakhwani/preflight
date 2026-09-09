@@ -21,6 +21,19 @@ Do not call it for addresses the user names explicitly as their own.
 | `preflight_explain` | `verdictId` | The same verdict with explorer links and model notes |
 | `preflight_recent` | `limit` | Recent verdicts, newest first |
 
+## Chains
+
+| Chain | id | Coverage |
+|---|---|---|
+| Ethereum | 1 | Full |
+| Arbitrum | 42161 | Full |
+| Base | 8453 | Contract analysis full. Creation records need a paid explorer tier, so `not-a-contract` and `deployer-history` report that they could not run |
+| Anything else | | Contract analysis only. No Uniswap V3 market data is indexed, so the liquidity and pool signals report that they could not run |
+
+A verdict always says which checks did not complete. If fewer than 60% of them ran,
+`preflight_check` returns an error instead of a verdict, because an outage must not be
+readable as a clean bill of health.
+
 ## Reading the answer
 
 Severity is one of `clean`, `low`, `medium`, `high`. It is computed from weighted signals,

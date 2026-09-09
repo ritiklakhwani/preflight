@@ -27,8 +27,8 @@ before writing any application code.
 ```
 wallet-cli ring init          # device connected, one confirmation
 # device physically unplugged
-printf '%s' "preflight-canary" | wallet-cli ring encrypt -k preflight-canary -o /tmp/canary.enc
-wallet-cli ring decrypt -k preflight-canary -i /tmp/canary.enc
+printf '%s' "canary" | wallet-cli ring encrypt -k preflight-test -o /tmp/canary.enc
+wallet-cli ring decrypt -k preflight-test -i /tmp/canary.enc
 ```
 
 Result: encrypt and decrypt both succeeded with the device disconnected. That single
@@ -102,7 +102,32 @@ Key ring provisioned. No named keys derived yet.
 Keys are created on first use: wallet-cli ring encrypt --key <name> ...
 ```
 
-### 2.3 The device requirement matrix is the most valuable fact and the hardest to find
+### 2.3 The keychain hint points at an entry the tool does not create
+
+Running a `ring` command without a TTY produces a genuinely excellent error. It
+names the problem and gives the exact command per platform:
+
+```
+Password required but no TTY available and WALLET_PASS is not set.
+Inject it from your OS keychain before running the command:
+  macOS : WALLET_PASS=$(security find-generic-password -a default -s ledger-wallet-cli -w) wallet-cli ...
+```
+
+We copied that command and it returned nothing. The keychain does hold an item
+under service `ledger-wallet-cli`, but its account is
+`member-private-key-<hash>`, which is the encrypted member key that `ring init`
+stores. There is no `default` account, because the tool never creates one.
+
+The hint is telling you where to *put* your passphrase, and reads as though it
+is telling you where the tool already keeps it. That cost us a debugging cycle
+on a machine where `ring init` had already succeeded.
+
+**Suggested fix:** one more line, something like `# store it first: security
+add-generic-password -a default -s ledger-wallet-cli -w`. Or have `ring init`
+offer to create the entry, since it is the moment the passphrase is chosen and
+the only moment the tool knows it.
+
+### 2.4 The device requirement matrix is the most valuable fact and the hardest to find
 
 For anyone building an agent, "which of these commands needs the device plugged in" is the
 first architectural question, and answering it wrong costs a day. It exists in the docs,

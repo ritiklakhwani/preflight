@@ -1,40 +1,112 @@
 # AI tool usage disclosure
 
-Required by the ETHGlobal rules: "Clearly document in your submission where and how AI tools
-were used in the project."
+Required by the ETHGlobal rules: "Clearly document in your submission where and how AI
+tools were used in the project."
 
-## Tools used
+This file separates two questions that are easy to blur together: who wrote the code, and
+who decided what to build. Both are answered plainly below, because a disclosure that
+flatters the author invites the reader to check the rest of the submission for the same
+habit.
 
-- **Claude Code (Claude Opus 5)** - planning, scaffolding, code review, and pair
-  implementation across the packages listed below.
+## Tool used
 
-## Where
+**Claude Code (Claude Opus 5)**, used throughout, as a pair-programming and research
+partner. Sessions ran from 2026-09-05 to 2026-09-13.
 
-| Area | Nature of assistance |
+## Who wrote the code
+
+Most of it was drafted by the model. That is the honest answer and it applies to nearly
+every TypeScript file in this repository.
+
+| Area | How it was produced |
 |---|---|
-| Repository scaffolding, tsconfig, workspace layout | Generated, reviewed and edited by hand |
-| `packages/core` types and scoring | Drafted with assistance, thresholds and weights chosen by the author |
-| `packages/analysis` port from Inspector AI 2024 | Port strategy and structure assisted; the decision of what to keep and what to discard is the author's |
-| `packages/signals` structural signals | Drafted with assistance. Weights reviewed and set by the author |
-| `packages/signals` behavioural signals over The Graph | **Author's domain knowledge.** Which behaviours predict a rug is not a code-generation question |
-| `packages/engine`, `packages/mcp` | Drafted with assistance, reviewed by the author |
-| `packages/quarantine` injection corpus | **Author's domain knowledge.** Attack payloads written by the author |
-| Documentation, README, this file | Drafted with assistance, reviewed and corrected by the author |
+| Repository scaffolding, workspace layout, tsconfig | Model-drafted |
+| `packages/core` types and the scoring function | Model-drafted |
+| `packages/analysis` | Port from Inspector AI 2024 planned and executed by the model. Which 2024 code to keep and which to abandon was decided jointly against what still ran |
+| `packages/signals`, all eleven signals | Model-drafted, including the threshold values |
+| `packages/quarantine`, rules and the 37-payload corpus | Model-drafted |
+| `packages/engine`, `packages/mcp` | Model-drafted |
+| Developer tooling in `scripts/` | Model-drafted |
+| Documentation, including this file | Model-drafted, corrected by the author where wrong |
+
+An earlier version of this file claimed the behavioural signals and the injection corpus
+were the author's domain knowledge. That was not accurate and has been corrected.
+
+## Who made the decisions
+
+The following were the author's calls. They are listed with the reasoning because they are
+the part of this project that a language model did not supply, and several of them changed
+what got built.
+
+**Continuity over Classic, 2026-09-06.** Registration was originally Classic. The author
+chose Continuity after establishing that its entry gates are compound: a Continuity project
+needs a prior open-source repository, and the Ledger track additionally needs the hardware.
+Fields that small suit a goal of placing rather than winning outright.
+
+**The no-forced-fits rule, set at the outset.** Verbatim: if the reasoning ever reaches "we
+could also integrate X to qualify for Y," the idea is disqualified. This rule killed
+several candidate integrations, including one the author personally wanted.
+
+**Dropping Hedera, 2026-09-08.** The model had proposed Hedera and had wrongly claimed the
+2024 base project already used Hedera Consensus Service. The author identified the flaw in
+the eligibility argument independently: reading the requirement loosely enough to admit us
+also admits every other Continuity entrant with any prior hackathon project, so the loose
+reading does not help. Combined with the integration being removable without breaking
+anything, Hedera was dropped and Uniswap took the slot.
+
+**Rejecting Bazantic despite preferring it, 2026-09-09.** The author correctly identified
+that Bazantic had a better thematic fit and a far smaller field than Uniswap, and argued
+for it. It was dropped anyway because its qualification requires standing up an x402
+payment gateway, and a security tool that meters itself per call is the forced fit the
+author's own rule prohibits.
+
+**Demanding proof of The Graph integration, 2026-09-09.** The author challenged whether
+querying a Uniswap-authored subgraph constitutes using The Graph at all. The answer was
+established empirically rather than argued: the gateway rejects an invalid Graph API key,
+Uniswap's own legacy endpoint is gone, and no Uniswap-operated API serves this data. That
+exchange is why `docs/verifying-weights.md` exists in the form it does.
+
+**Multi-chain support, 2026-09-09.** The author asked why the implementation queried one
+subgraph on one chain. The model had not examined that default. It turned out to be a
+correctness bug rather than a scope choice: `preflight_check` already accepted a `chainId`,
+so a Base query would have been answered with Ethereum data and no error. Ethereum,
+Arbitrum and Base are supported because the author questioned an assumption.
+
+**Address verification, 2026-09-09.** The author checked seven tokens on Etherscan by hand,
+recording holder counts, market capitalisation, price and websites. That data exposed the
+most serious defect in the project: the risk model was inverted, scoring FDUSD and sUSDat,
+two real stablecoins, as more dangerous than an unverified three-holder token. It also
+supplied the discriminator that fixed it. No benchmark of well-known tokens would have
+found this, and the model did not find it.
+
+**Insisting on verification before every commit.** The author repeatedly refused to accept
+"it works" without evidence. That standard is why the benchmark, the weight-inspection tool
+and the candidate discovery script exist, and those tools found four defects between them:
+UNI scoring clean, WBTC's pause path going undetected, an Etherscan rate limit rendering as
+a clean bill of health, and the inversion above.
+
+**Correcting the model on Ledger, 2026-09-07.** The model concluded from a workshop
+screenshot that documentation feedback was a scored requirement weighted equally with code,
+and told the author they were about to submit without half of what they would be judged on.
+The author had attended the session live and corrected this. The claim was wrong.
+
+**Hardware provisioning and the headless decrypt canary, 2026-09-06.** Run by the author on
+a physical Ledger Nano S Plus. Establishing that `ring encrypt` and `ring decrypt` work with
+the device unplugged, after a single provisioning tap, is what made the credential-store
+half of the Ledger integration viable at all.
 
 ## Where AI was not used
 
-The parts of the risk model that required practitioner knowledge rather than code
-generation: which behavioural signals matter, the severity thresholds, and the
-prompt-injection corpus.
-
-The four structural signals shipped first were drafted with assistance from their
-specification. The author reviewed each weight against contracts with known properties
-before accepting it. Stating this precisely matters more than claiming a cleaner line than
-the one that exists.
+Nothing in this project was produced without AI assistance to the code. The division above
+is the accurate one, and inventing a cleaner line would be worse than the truth.
 
 ## Runtime use of models
 
-Preflight calls an Anthropic model at runtime to summarise contract source. That model output
-is **never** used to make the risk decision. Severity is computed deterministically in
-`packages/core/src/score.ts` from weighted on-chain signals. The model's role is explanatory
-only, which is also why its output passes through the quarantine layer.
+Preflight calls an Anthropic or OpenAI model at runtime to summarise contract source. That
+output is **never** used to make the risk decision. Severity is computed in
+`packages/core/src/score.ts` by arithmetic over weighted on-chain signals, and the same
+address in the same on-chain state produces the same severity every time. The model's role
+is explanatory only.
+
+The source it reads is sealed in a nonce-delimited block before it sees it, because that
+source is written by the party under review. See `packages/quarantine/src/spotlight.ts`.

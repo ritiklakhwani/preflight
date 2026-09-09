@@ -29,6 +29,7 @@ The 2024 build hardcoded live API credentials in source, committed to a public r
 - `background.js:151` - Anthropic API key
 - `background.js:91` and `background.js:111` - Etherscan API key
 
-Both have been revoked. In the 2026 build no credential appears in source: keys are read
-from the environment in development, and encrypted under the Ledger Key Ring in the gate
-service, decrypted at runtime and never written to disk in plaintext.
+Both have been revoked, confirmed 2026-09-09. In the 2026 build no credential appears in
+source: keys are read from the environment, and `.env` is ignored on the first line of
+`.gitignore`. Moving them onto the Ledger Key Ring, so the service holds ciphertext rather
+than secrets, is what `packages/gate` is for and is not built yet.
