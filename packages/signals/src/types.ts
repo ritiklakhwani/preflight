@@ -1,5 +1,5 @@
 import type { AnalysisResult, SignalResult } from '@preflight/core';
-import type { DeployerResult } from '@preflight/analysis';
+import type { DeployerResult, HolderResult } from '@preflight/analysis';
 import type { MarketResult } from './graph.js';
 
 /**
@@ -22,6 +22,11 @@ export interface SignalContext {
    * creator, which is either a wallet or an explorer we could not reach.
    */
   deployer: DeployerResult | null;
+  /**
+   * Unique addresses across a recent window of transfers. Null when the
+   * address is not a token, so the question does not apply.
+   */
+  holders: HolderResult | null;
 }
 
 export interface Signal {

@@ -24,6 +24,39 @@ const DANGEROUS = [
   'withdraw', 'rescue', 'sweep', 'setmaxtx', 'excludefromfee', 'upgradeto',
 ];
 
+/**
+ * Transfers can be stopped two ways, and the first version of this only knew
+ * about one of them.
+ *
+ * Per-address gating: a mapping consulted on the transfer path. This is what
+ * USDC and USDT do, and matching the vocabulary works because the names are
+ * conventional.
+ */
+const ADDRESS_GATE =
+  /require\s*\([^)]*(blacklist|blocklist|denylist|blocked|banned|frozen|_canTransfer|tradingEnabled|isBot)/i;
+
+/**
+ * Global halt: a pause flag consulted on the transfer path. This is the more
+ * common mechanism of the two, and we matched none of it. WBTC guards its
+ * `transfer` with OpenZeppelin's `whenNotPaused` modifier and an owner can
+ * call `pause`, so every holder can be frozen at once, and the signal stayed
+ * silent.
+ *
+ * Both patterns below require the guard to sit on a transfer entry point.
+ * Checking for `whenNotPaused` anywhere in the file would fire on contracts
+ * that only pause an admin function, which is not a risk to a holder.
+ *
+ * This is the third time enumerating vocabulary has missed a real case, after
+ * `msg.sender == minter` on UNI. Match the construct.
+ */
+const PAUSABLE_TRANSFER =
+  /function\s+(transfer|transferFrom|_update|_beforeTokenTransfer)\s*\([^)]*\)[^{;]*\bwhenNotPaused\b/i;
+const INLINE_PAUSE_CHECK = /require\s*\(\s*!\s*(paused|_paused)\b/i;
+
+function canHaltTransfers(code: string): boolean {
+  return PAUSABLE_TRANSFER.test(code) || INLINE_PAUSE_CHECK.test(code);
+}
+
 export function structural(src: SourceCodeResult | null): Pick<
   AnalysisResult,
   'verified' | 'contractName' | 'compilerVersion' | 'isProxy' | 'implementationAddress' |
@@ -70,8 +103,7 @@ export function structural(src: SourceCodeResult | null): Pick<
     isErc20,
     ownerOnlyFunctions: OWNER_HINTS.test(code) ? ownerOnlyFunctions : [],
     hasSelfDestruct: /selfdestruct|suicide\s*\(/i.test(code),
-    hasTransferRestrictions:
-      /require\s*\([^)]*(blacklist|blocked|banned|_canTransfer|tradingEnabled|isBot)/i.test(code),
+    hasTransferRestrictions: ADDRESS_GATE.test(code) || canHaltTransfers(code),
   };
 }
 

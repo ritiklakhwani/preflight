@@ -203,3 +203,54 @@ export async function fetchDeployerProfile(
     return { status: 'error', error: err instanceof Error ? err.message : String(err) };
   }
 }
+
+/**
+ * How widely a token is actually held.
+ *
+ * Etherscan's holder-count endpoint is Pro-only, but transfer history is free,
+ * and unique addresses across a recent window separates a distributed token
+ * from a closed loop just as well. Measured against tokens whose character was
+ * confirmed by hand on 2026-09-09:
+ *
+ *   FDUSD   57 unique per 100 transfers   real, 4,252 holders
+ *   sUSDat  45                            real, 1,259 holders
+ *   ONJAI   11 per 64                     dead, 9 holders
+ *   MEX      8 per 100                    dead, 14 holders
+ *   DOTT     7 per 15                     throwaway, 3 holders
+ *
+ * The gap between 11 and 45 has nothing in it. MEX is the sharpest case: a
+ * hundred transfers circulating among eight addresses is how a $104m volume
+ * figure gets manufactured without anyone ever buying the token.
+ */
+export type HolderResult =
+  | { status: 'ok'; sampled: number; uniqueAddresses: number }
+  | { status: 'error'; error: string };
+
+const HOLDER_SAMPLE = 100;
+
+export async function fetchHolderDiversity(
+  token: string,
+  chainId: number,
+): Promise<HolderResult> {
+  try {
+    const txs = await call<Array<{ from: string; to: string }>>({
+      chainid: String(chainId),
+      module: 'account',
+      action: 'tokentx',
+      contractaddress: token,
+      page: '1',
+      offset: String(HOLDER_SAMPLE),
+      sort: 'desc',
+    });
+
+    const addresses = new Set<string>();
+    for (const t of txs) {
+      if (t.from) addresses.add(t.from.toLowerCase());
+      if (t.to) addresses.add(t.to.toLowerCase());
+    }
+
+    return { status: 'ok', sampled: txs.length, uniqueAddresses: addresses.size };
+  } catch (err) {
+    return { status: 'error', error: err instanceof Error ? err.message : String(err) };
+  }
+}

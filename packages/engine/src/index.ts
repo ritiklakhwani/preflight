@@ -7,7 +7,7 @@
  * definition of what a verdict is.
  */
 import { randomUUID } from 'node:crypto';
-import { analyse, fetchDeployerProfile } from '@preflight/analysis';
+import { analyse, fetchDeployerProfile, fetchHolderDiversity } from '@preflight/analysis';
 import { score, type Verdict } from '@preflight/core';
 import {
   ALL_SIGNALS,
@@ -79,11 +79,23 @@ export async function runPreflight(
   // Depends on the creator, so it cannot join the batch above. Skipped
   // entirely for wallets and for anything whose creation record we could not
   // read, in which case the signal reports why rather than guessing.
-  const deployer = analysis.creator
-    ? await fetchDeployerProfile(analysis.creator, chainId)
-    : null;
+  const [deployer, holders] = await Promise.all([
+    analysis.creator ? fetchDeployerProfile(analysis.creator, chainId) : null,
+    // Fetch whenever we cannot rule a token out. Requiring isErc20 skipped the
+    // check on unverified contracts, since the ABI is what proves the ERC-20
+    // surface, and an unverified contract with three holders is exactly the
+    // case this signal exists for.
+    analysis.isErc20 || !analysis.verified ? fetchHolderDiversity(normalised, chainId) : null,
+  ]);
 
-  const ctx: SignalContext = { address: normalised, chainId, analysis, market, deployer };
+  const ctx: SignalContext = {
+    address: normalised,
+    chainId,
+    analysis,
+    market,
+    deployer,
+    holders,
+  };
   const signals = await runSignals(opts.signals ?? ALL_SIGNALS, ctx);
   const { score: value, severity } = score(signals);
 

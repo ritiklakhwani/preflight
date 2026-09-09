@@ -7,8 +7,14 @@ export {
   fetchContractSource,
   fetchContractCreation,
   fetchDeployerProfile,
+  fetchHolderDiversity,
 } from './etherscan.js';
-export type { SourceCodeResult, CreationResult, DeployerResult } from './etherscan.js';
+export type {
+  SourceCodeResult,
+  CreationResult,
+  DeployerResult,
+  HolderResult,
+} from './etherscan.js';
 
 /**
  * The single entry point the rest of Preflight uses.
