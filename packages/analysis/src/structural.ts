@@ -12,8 +12,13 @@ type AbiEntry = { type?: string; name?: string; stateMutability?: string };
 
 // Privileged-modifier vocabulary. `onlyOwner` alone is not enough: USDC's proxy
 // gates upgradeTo on `onlyAdmin`, MakerDAO uses `auth`, OZ v5 uses `_checkOwner`.
+//
+// The final alternative is deliberately generic. Naming the roles it compares
+// against missed UNI, which gates mint on `require(msg.sender == minter)`.
+// Any equality test on msg.sender is an access control gate whatever the
+// variable is called, so matching the construct beats enumerating the names.
 const OWNER_HINTS =
-  /(only|if)(Owner|Admin|Role|Governance|Operator|Minter|Manager)|_checkOwner|AccessControl|Ownable|\bauth\b|require\s*\(\s*msg\.sender\s*==\s*(owner|admin)/i;
+  /(only|if)(Owner|Admin|Role|Governance|Operator|Minter|Manager)|_checkOwner|AccessControl|Ownable|\bauth\b|require\s*\(\s*msg\.sender\s*==/i;
 const DANGEROUS = [
   'mint', 'burnfrom', 'pause', 'unpause', 'blacklist', 'setfee', 'settax',
   'withdraw', 'rescue', 'sweep', 'setmaxtx', 'excludefromfee', 'upgradeto',
