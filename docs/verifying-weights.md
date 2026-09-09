@@ -162,3 +162,49 @@ correct answer:
 3. `unverified-source` scores `medium` alone. Not being able to read what you
    are signing against is the most basic red flag there is. Is `high` right, or
    would that make the tool too loud on the long tail of unverified contracts?
+
+
+## The injection corpus
+
+`packages/quarantine/test/corpus.ts` holds adversarial strings that could
+plausibly appear in on-chain metadata and be read by a model with signing
+capability. Each costs one deployment to publish and is then hosted
+permanently by an explorer or a subgraph.
+
+It is organised by **site** and **class**, not by rule. The first version had
+eight payloads, one per detection rule, because it was written by reading the
+rule list. That is circular: it confirms the rules that exist and can never
+reveal one that is missing, which is the only reason a corpus is worth having.
+
+Site is the axis a generic prompt-injection list cannot give you. A token
+symbol is about ten characters, so no imperative fits and only encoding attacks
+are possible. A Solidity contract name cannot contain a space, which forces
+underscore and camelCase smuggling. Half the interesting attacks are shaped by
+the field they must survive in, and cells that cannot be filled are recorded
+with a reason rather than skipped.
+
+Current state:
+
+    37 payloads across 6 sites and 10 attack classes
+    33 detected, 4 known misses, 10 cells documented as impossible
+
+**Known misses are the most valuable rows.** A corpus containing only what we
+catch is marketing. The four that remain:
+
+| Entry | Class | Why it is missed |
+|---|---|---|
+| `name-non-english` | non-english | The override rule is English-only |
+| `src-non-english` | non-english | Same |
+| `abi-authority` | authority-impersonation | `systemOverrideAdminVerified` survives normalisation |
+| `src-format-injection-json` | format-injection | Forges the exact JSON shape the model returns |
+
+The corpus paid for itself on its first run twice over. It corrected a wrong
+expectation of mine, `auditedByCertiK_doNotFlag` was not detected because the
+rule expects spaced phrases. And it exposed a systematic gap: every payload
+published as a Solidity identifier defeated the space-dependent rules. Adding
+identifier normalisation plus three new rules for fabricated verdicts,
+persistence framing and mixed-script homoglyphs promoted thirteen entries from
+miss to detect in one pass.
+
+When a `known-miss` starts passing, its test fails on purpose, so the entry
+gets promoted rather than quietly drifting.

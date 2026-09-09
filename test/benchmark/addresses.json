@@ -119,6 +119,27 @@
       "label": "ETHM",
       "expect": "high",
       "why": "real project at mappedswap.io but 10 holders and $21m of reported TVL against 7 transactions. The same mispriced-TVL artifact as ease.org, kept as an honest edge case"
+    },
+    {
+      "address": "0x514910771AF9Ca656af840dff83E8264EcF986CA",
+      "chainId": 8453,
+      "label": "LINK on Base (wrong chain)",
+      "expect": "high",
+      "why": "LINK's Ethereum address queried against Base, where nothing is deployed at it. Exercises no-market. This is the wrong-chain-id mistake, which is common and expensive"
+    },
+    {
+      "address": "0x349F9d9fAE854eF6f52B2475AF3868427a0458bB",
+      "chainId": 1,
+      "label": "AA (Astra)",
+      "expect": "medium",
+      "why": "1.3 days old, single pool holding $20,000 with one transaction, 207 holders. Exercises pool-age. The label is what Preflight should say, not a claim about the token's eventual fate: anything this new warrants reporting before acting"
+    },
+    {
+      "address": "0x3ef84e740a02ba4853c5f689c342210a0f0a0cf2",
+      "chainId": 1,
+      "label": "LAPTOP",
+      "expect": "high",
+      "why": "unverified, pool two days old, thin liquidity, few holders, and a deployer 8 days old with 8 contracts in its entire history. Exercises deployer-history. A second token with the same symbol was deployed by a different fresh address in the same week"
     }
   ]
 }

@@ -26,10 +26,14 @@ const { cases } = JSON.parse(readFileSync(file, 'utf8')) as {
   cases: { address: string; chainId: number; label: string; expect: Severity; why: string }[];
 };
 
-// Etherscan's free tier allows 5 calls a second and one verdict makes up to
-// five. Without this pause the run rate-limits itself and every address comes
-// back CLEAN, which is exactly the failure the coverage check now catches.
-const PAUSE_MS = 1500;
+// Etherscan's free tier allows 5 calls a second and one verdict now makes up
+// to five: source, creation, implementation, deployer history, holder
+// diversity. Without a generous pause the run rate-limits itself, signals drop
+// out, and a legitimate finding looks like a coverage gap. At 1500ms
+// deployer-history was intermittently missing on the one case that exercises
+// it. Without any pause at all every address came back CLEAN, which is the
+// failure the coverage check exists to catch.
+const PAUSE_MS = 3000;
 const pause = () => new Promise((r) => setTimeout(r, PAUSE_MS));
 
 const store = await createStore();
