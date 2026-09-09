@@ -9,8 +9,7 @@ create table if not exists verdicts (
   gate_required boolean     not null default false,
   gate_approved boolean,
   gate_method   text,
-  hcs_topic_id  text,
-  hcs_sequence  bigint,
+  gate_reason   text,
   created_at    timestamptz not null default now()
 );
 
@@ -35,3 +34,8 @@ create table if not exists taint_events (
 create index if not exists verdicts_created_at_idx on verdicts (created_at desc);
 create index if not exists signal_results_verdict_idx on signal_results (verdict_id);
 create index if not exists taint_events_verdict_idx on taint_events (verdict_id);
+
+-- Added after the gate shipped. A verdict re-read from here was reporting
+-- "not approved" instead of the reason the device gave, so preflight_explain
+-- contradicted preflight_check on the same verdict.
+alter table verdicts add column if not exists gate_reason text;
