@@ -12,7 +12,8 @@
     "@preflight/core": "workspace:*",
     "@preflight/signals": "workspace:*",
     "pg": "^8.13.1",
-    "@preflight/quarantine": "workspace:*"
+    "@preflight/quarantine": "workspace:*",
+    "@preflight/gate": "workspace:*"
   },
   "devDependencies": {
     "@types/pg": "^8.11.10"

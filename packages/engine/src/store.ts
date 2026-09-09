@@ -51,15 +51,14 @@ function postgresStore(pool: pg.Pool): VerdictStore {
         await client.query(
           `insert into verdicts
              (id, address, chain_id, severity, score, summary, analysis,
-              gate_required, gate_approved, gate_method,
-              hcs_topic_id, hcs_sequence, created_at)
-           values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+              gate_required, gate_approved, gate_method, gate_reason, created_at)
+           values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
            on conflict (id) do nothing`,
           [
             v.id, v.address, v.chainId, v.severity, v.score, v.summary,
             JSON.stringify(v.analysis),
             v.gate?.required ?? false, v.gate?.approved ?? null, v.gate?.method ?? null,
-            v.hcs?.topicId ?? null, v.hcs?.sequenceNumber ?? null, v.createdAt,
+            v.gate?.reason ?? null, v.createdAt,
           ],
         );
         for (const s of v.signals) {
@@ -145,15 +144,7 @@ async function hydrate(pool: pg.Pool, row: Record<string, unknown>): Promise<Ver
             required: Boolean(row['gate_required']),
             approved: Boolean(row['gate_approved']),
             method: row['gate_method'] as 'auto' | 'device',
-          },
-        }
-      : {}),
-    ...(row['hcs_topic_id']
-      ? {
-          hcs: {
-            topicId: String(row['hcs_topic_id']),
-            sequenceNumber: Number(row['hcs_sequence']),
-            hashscanUrl: `https://hashscan.io/testnet/topic/${row['hcs_topic_id']}`,
+            ...(row['gate_reason'] ? { reason: String(row['gate_reason']) } : {}),
           },
         }
       : {}),

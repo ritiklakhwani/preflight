@@ -7,3 +7,10 @@ dist
 .next
 *.tsbuildinfo
 .DS_Store
+
+# Credentials encrypted against the Ledger Key Ring are committed on purpose:
+# they are ciphertext and the repo is the distribution mechanism. Plaintext
+# never is.
+secrets/*
+!secrets/*.enc
+!secrets/README.md

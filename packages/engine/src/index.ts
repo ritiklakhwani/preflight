@@ -16,7 +16,8 @@ import {
   type Signal,
   type SignalContext,
 } from '@preflight/signals';
-import { scanFields, type Field } from '@preflight/quarantine';
+import { runGate } from '@preflight/gate';
+import { LENGTH_BUDGET, scanFields, type Field } from '@preflight/quarantine';
 import { createStore, type VerdictStore } from './store.js';
 
 export { createStore } from './store.js';
@@ -28,6 +29,15 @@ export interface PreflightOptions {
   store?: VerdictStore;
   /** Override the signal set. Defaults to everything currently wired. */
   signals?: Signal[];
+  /**
+   * Ask for hardware confirmation when the verdict is high.
+   *
+   * Explicit rather than defaulted on, because a confirmation blocks for up to
+   * a minute waiting for a person, and the benchmark alone would sit through
+   * eight of those. The MCP server, which is the product surface, always
+   * passes true. Dev tooling does not.
+   */
+  gate?: boolean;
 }
 
 /**
@@ -122,15 +132,23 @@ export async function runPreflight(
       ],
       'etherscan',
     ),
+    // Prose budget, not the identifier one. We asked the model for up to
+    // sixty words, so flagging a 140-character summary as an attack was the
+    // scanner reporting our own output as hostile.
     ...scanFields(
       [
         { path: 'analysis.llmSummary', value: analysis.llmSummary },
         { path: 'analysis.llmRiskNotes', value: analysis.llmRiskNotes },
       ],
       'model output',
+      LENGTH_BUDGET.prose,
     ),
     ...scanFields(marketFields, 'thegraph:uniswap-v3'),
   ];
+
+  // Blocks on a human. Runs after scoring because the severity is what decides
+  // whether a person is needed at all.
+  const gate = opts.gate ? await runGate(severity) : undefined;
 
   const verdict: Verdict = {
     id: randomUUID().slice(0, 8),
@@ -143,6 +161,7 @@ export async function runPreflight(
     signals,
     coverage: { ran: signals.length - signals.filter((s) => s.error).length, total: signals.length },
     taint,
+    ...(gate ? { gate } : {}),
     createdAt: new Date().toISOString(),
   };
 

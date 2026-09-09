@@ -22,6 +22,9 @@ const transport = new StdioClientTransport({
   command: resolve(root, 'bin/preflight-mcp'),
   args: [],
   cwd: root,
+  // StdioClientTransport passes a filtered environment by default, so
+  // overrides like GATE_TIMEOUT_MS never reach the server without this.
+  env: { ...process.env } as Record<string, string>,
   stderr: 'inherit',
 });
 

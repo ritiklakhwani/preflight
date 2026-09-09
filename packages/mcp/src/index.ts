@@ -11,6 +11,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { MIN_COVERAGE, createStore, runPreflight, type VerdictStore } from '@preflight/engine';
+import { loadRingSecrets } from '@preflight/gate';
 import { z } from 'zod';
 import { renderList, renderVerdict } from './render.js';
 
@@ -41,12 +42,20 @@ server.registerTool(
         .number()
         .int()
         .default(1)
-        .describe('EVM chain id. 1 Ethereum, 8453 Base, 42161 Arbitrum, 10 Optimism, 137 Polygon.'),
+        .describe(
+          'EVM chain id. Fully supported: 1 Ethereum, 42161 Arbitrum, 8453 Base. ' +
+            'Other chains return a partial verdict: contract analysis still runs, but ' +
+            'no Uniswap V3 market data is indexed for them, so the liquidity and pool ' +
+            'signals report that they could not run.',
+        ),
     },
   },
   async ({ address, chainId }) => {
     try {
-      const verdict = await runPreflight(address, chainId, { store });
+      // gate: true is what makes a high verdict stop rather than advise. It
+      // blocks until someone presses a button on the device, or until it times
+      // out, which is a refusal.
+      const verdict = await runPreflight(address, chainId, { store, gate: true });
       const { ran, total } = verdict.coverage;
       log(
         `${verdict.address} chain ${verdict.chainId} -> ${verdict.severity} ${verdict.score} ` +
@@ -68,6 +77,28 @@ server.registerTool(
                 renderVerdict(verdict, { full: true }) +
                 `\n\nTreat this as unknown risk, not absence of risk. Do not sign on the ` +
                 `assumption that the address is safe.`,
+            },
+          ],
+        };
+      }
+
+      // A required confirmation that was not granted is a refusal, not a
+      // verdict with a note attached. Returning it as an error means a caller
+      // cannot read past it.
+      if (verdict.gate?.required && !verdict.gate.approved) {
+        log(`${verdict.id} REFUSED: ${verdict.gate.reason ?? 'not approved'}`);
+        return {
+          isError: true,
+          content: [
+            {
+              type: 'text',
+              text:
+                `Refused. This address scored ${verdict.severity.toUpperCase()} and a human ` +
+                `did not approve it on the hardware device.\n\n` +
+                `Reason: ${verdict.gate.reason ?? 'not approved'}\n\n` +
+                renderVerdict(verdict, { full: true }) +
+                `\n\nDo not sign anything against this address. Ask the user to connect ` +
+                `their Ledger and confirm on the device, then call preflight_check again.`,
             },
           ],
         };
@@ -131,6 +162,13 @@ server.registerTool(
     return { content: [{ type: 'text', text: renderList(verdicts) }] };
   },
 );
+
+// Credentials held as ciphertext are decrypted against the Ledger Key Ring
+// before anything needs them. Absent files are not an error: the .env path
+// still works and the log says which credentials came from where.
+const ring = await loadRingSecrets(process.cwd());
+if (ring.loaded.length) log(`key ring: decrypted ${ring.loaded.join(', ')}`);
+for (const e of ring.errors) log(`key ring: ${e}`);
 
 store = await createStore();
 log(`storage: ${store.kind}`);

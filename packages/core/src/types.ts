@@ -101,15 +101,18 @@ export interface Verdict {
    */
   coverage: { ran: number; total: number };
   taint: TaintEvent[];
+  /**
+   * The hardware confirmation. Present only when the caller asked for one.
+   *
+   * `approved: false` means the action must not proceed, whatever the reason:
+   * declined on the device, no device attached, wallet-cli missing, timed out.
+   * Every one of those is a refusal.
+   */
   gate?: {
     required: boolean;
     approved: boolean;
     method: 'auto' | 'device';
-  };
-  hcs?: {
-    topicId: string;
-    sequenceNumber: number;
-    hashscanUrl: string;
+    reason?: string;
   };
   createdAt: string;
 }

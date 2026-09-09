@@ -72,7 +72,17 @@ export function renderVerdict(v: Verdict, opts: { full?: boolean } = {}): string
     );
   }
 
-  if (v.severity === 'high') {
+  if (v.gate?.required) {
+    out.push(
+      v.gate.approved
+        ? 'GATE: approved by a human on a Ledger device.'
+        : `GATE: REFUSED. ${v.gate.reason ?? 'not approved'}.`,
+      v.gate.approved
+        ? 'A person confirmed this on hardware. You may proceed.'
+        : 'Nobody approved this on hardware. Do not sign against this address.',
+      '',
+    );
+  } else if (v.severity === 'high') {
     out.push(
       'POLICY: a HIGH verdict requires human confirmation on a hardware device',
       'before any transaction against this address is signed. Do not proceed on',

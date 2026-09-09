@@ -55,6 +55,9 @@ importers:
       '@preflight/core':
         specifier: workspace:*
         version: link:../core
+      '@preflight/gate':
+        specifier: workspace:*
+        version: link:../gate
       '@preflight/quarantine':
         specifier: workspace:*
         version: link:../quarantine
@@ -69,6 +72,12 @@ importers:
         specifier: ^8.11.10
         version: 8.23.1
 
+  packages/gate:
+    dependencies:
+      '@preflight/core':
+        specifier: workspace:*
+        version: link:../core
+
   packages/mcp:
     dependencies:
       '@modelcontextprotocol/sdk':
@@ -80,6 +89,9 @@ importers:
       '@preflight/engine':
         specifier: workspace:*
         version: link:../engine
+      '@preflight/gate':
+        specifier: workspace:*
+        version: link:../gate
       zod:
         specifier: ^3.25.76
         version: 3.25.76

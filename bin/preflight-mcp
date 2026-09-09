@@ -28,6 +28,25 @@ if [ -z "$NODE" ]; then
   exit 127
 fi
 
+# wallet-cli needs a passphrase for Key Ring operations and refuses to prompt
+# without a TTY, which an MCP server spawned by a GUI client never has. Its own
+# error message recommends injecting it from the OS keychain, so that is what
+# this does. The passphrase never touches a file or the client config.
+#
+# Absent keychain entry is not fatal: the device confirmation does not need it,
+# only the encrypted credential store does, and that reports its own failure.
+if [ -z "${WALLET_PASS:-}" ]; then
+  case "$(uname -s)" in
+    Darwin)
+      WALLET_PASS="$(security find-generic-password -a default -s ledger-wallet-cli -w 2>/dev/null || true)"
+      ;;
+    Linux)
+      WALLET_PASS="$(secret-tool lookup service ledger-wallet-cli account default 2>/dev/null || true)"
+      ;;
+  esac
+  [ -n "$WALLET_PASS" ] && export WALLET_PASS
+fi
+
 if [ ! -f "$ROOT/.env" ]; then
   echo "preflight-mcp: $ROOT/.env is missing. Copy .env.example and fill in the keys." >&2
   exit 1
