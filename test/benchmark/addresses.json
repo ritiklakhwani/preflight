@@ -1,0 +1,16 @@
+{
+  "note": "Labelled addresses for weight calibration. `expect` is the worst band this address should produce. A blue chip scoring above its label is a false positive, which is the failure mode that makes a security tool unusable. Add known-bad addresses as you find them; see docs/verifying-weights.md for where to source them.",
+  "cases": [
+    { "address": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2", "chainId": 1, "label": "WETH", "expect": "low", "why": "canonical wrapped ether, no admin" },
+    { "address": "0x6B175474E89094C44Da98b954EedeAC495271d0F", "chainId": 1, "label": "DAI", "expect": "low", "why": "auth-gated mint is real centralisation but not a risk to a signer" },
+    { "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", "chainId": 1, "label": "USDC", "expect": "medium", "why": "upgradeable proxy and can blacklist a holder" },
+    { "address": "0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984", "chainId": 1, "label": "UNI", "expect": "low", "why": "governance token, no privileged transfer path" },
+    { "address": "0x514910771AF9Ca656af840dff83E8264EcF986CA", "chainId": 1, "label": "LINK", "expect": "low", "why": "established, widely held" },
+    { "address": "0x7Fc66500c84A76Ad7e9c93437bFc5Ac33E2DDaE9", "chainId": 1, "label": "AAVE", "expect": "low", "why": "established governance token" },
+    { "address": "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599", "chainId": 1, "label": "WBTC", "expect": "medium", "why": "custodial, mint and pause behind an owner" },
+    { "address": "0xdAC17F958D2ee523a2206206994597C13D831ec7", "chainId": 1, "label": "USDT", "expect": "medium", "why": "owner can pause and blacklist" },
+    { "address": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831", "chainId": 42161, "label": "USDC on Arbitrum", "expect": "medium", "why": "same contract family, different chain" },
+    { "address": "0x160de4468586B6B2F8a92FEB0c260fc6cFC743B1", "chainId": 1, "label": "ease.org", "expect": "high", "why": "$1.1T reported TVL against 4 lifetime transactions" },
+    { "address": "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045", "chainId": 1, "label": "vitalik.eth", "expect": "medium", "why": "a wallet, not a contract" }
+  ]
+}
