@@ -10,7 +10,7 @@
  */
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { createStore, runPreflight, type VerdictStore } from '@preflight/engine';
+import { MIN_COVERAGE, createStore, runPreflight, type VerdictStore } from '@preflight/engine';
 import { z } from 'zod';
 import { renderList, renderVerdict } from './render.js';
 
@@ -47,7 +47,32 @@ server.registerTool(
   async ({ address, chainId }) => {
     try {
       const verdict = await runPreflight(address, chainId, { store });
-      log(`${verdict.address} chain ${verdict.chainId} -> ${verdict.severity} ${verdict.score} (${verdict.id})`);
+      const { ran, total } = verdict.coverage;
+      log(
+        `${verdict.address} chain ${verdict.chainId} -> ${verdict.severity} ${verdict.score} ` +
+          `(${verdict.id}, coverage ${ran}/${total})`,
+      );
+
+      // An outage must not be answerable as a clean bill of health. When most
+      // of the checks did not complete, the honest response is that we do not
+      // know, returned as an error so a caller cannot mistake it for a pass.
+      if (ran / total < MIN_COVERAGE) {
+        return {
+          isError: true,
+          content: [
+            {
+              type: 'text',
+              text:
+                `Preflight could not complete enough checks to judge this address. ` +
+                `Only ${ran} of ${total} ran.\n\n` +
+                renderVerdict(verdict, { full: true }) +
+                `\n\nTreat this as unknown risk, not absence of risk. Do not sign on the ` +
+                `assumption that the address is safe.`,
+            },
+          ],
+        };
+      }
+
       return { content: [{ type: 'text', text: renderVerdict(verdict) }] };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);

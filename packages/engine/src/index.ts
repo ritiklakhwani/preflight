@@ -30,18 +30,32 @@ export interface PreflightOptions {
   signals?: Signal[];
 }
 
+/**
+ * Below this fraction of the signal set running, the verdict is a statement
+ * about our connectivity rather than about the address, and it says so.
+ */
+export const MIN_COVERAGE = 0.6;
+
 /** Deterministic. Written from the signals that fired, never from model output. */
 function summarise(v: { severity: string; score: number; signals: Verdict['signals'] }): string {
   const fired = v.signals.filter((s) => s.fired);
   const failed = v.signals.filter((s) => s.error);
+  const ran = v.signals.length - failed.length;
   const head = `${v.severity.toUpperCase()} (${v.score}/100)`;
 
-  if (fired.length === 0) {
-    const tail = failed.length ? `; ${failed.length} signal(s) could not run` : '';
-    return `${head}. No risk signals fired${tail}.`;
+  const tail = failed.length
+    ? `; ${failed.length} of ${v.signals.length} signals could not run`
+    : '';
+
+  if (ran / v.signals.length < MIN_COVERAGE) {
+    return (
+      `INCONCLUSIVE. Only ${ran} of ${v.signals.length} checks completed, so this is not ` +
+      `a finding about the address. Treat the risk as unknown, not absent${tail.replace('; ', '. ')}.`
+    );
   }
+
+  if (fired.length === 0) return `${head}. No risk signals fired${tail}.`;
   const names = fired.map((s) => s.name).join(', ');
-  const tail = failed.length ? `; ${failed.length} signal(s) could not run` : '';
   return `${head}. ${fired.length} of ${v.signals.length} signals fired: ${names}${tail}.`;
 }
 
@@ -115,6 +129,7 @@ export async function runPreflight(
     summary: summarise({ severity, score: value, signals }),
     analysis,
     signals,
+    coverage: { ran: signals.length - signals.filter((s) => s.error).length, total: signals.length },
     taint,
     createdAt: new Date().toISOString(),
   };

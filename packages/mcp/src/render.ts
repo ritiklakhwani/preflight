@@ -64,6 +64,14 @@ export function renderVerdict(v: Verdict, opts: { full?: boolean } = {}): string
     '',
   );
 
+  if (v.coverage.ran < v.coverage.total) {
+    out.push(
+      `COVERAGE: ${v.coverage.ran} of ${v.coverage.total} checks completed. The rest could`,
+      'not run, and their findings are unknown rather than absent.',
+      '',
+    );
+  }
+
   if (v.severity === 'high') {
     out.push(
       'POLICY: a HIGH verdict requires human confirmation on a hardware device',

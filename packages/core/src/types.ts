@@ -91,6 +91,15 @@ export interface Verdict {
   summary: string;
   analysis: AnalysisResult;
   signals: SignalResult[];
+  /**
+   * How much of the signal set actually ran.
+   *
+   * Without this, a rate-limited explorer produces a verdict where every
+   * signal errored, none fired, and the score is 0. That renders as "no risk
+   * signals fired", which an agent reads as safe. An outage must never be
+   * presentable as a clean bill of health.
+   */
+  coverage: { ran: number; total: number };
   taint: TaintEvent[];
   gate?: {
     required: boolean;

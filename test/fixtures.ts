@@ -68,6 +68,7 @@ export function verdict(over: Partial<Verdict> = {}): Verdict {
     summary: 'LOW (20/100).',
     analysis: analysis(),
     signals: [],
+    coverage: { ran: 9, total: 9 },
     taint: [],
     createdAt: '2026-09-09T00:00:00.000Z',
     ...over,

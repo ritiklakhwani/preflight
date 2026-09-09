@@ -121,6 +121,10 @@ async function hydrate(pool: pg.Pool, row: Record<string, unknown>): Promise<Ver
     score: Number(row['score']),
     summary: String(row['summary']),
     analysis: row['analysis'] as Verdict['analysis'],
+    coverage: {
+      ran: signals.rows.filter((s) => !s.error).length,
+      total: signals.rows.length,
+    },
     signals: signals.rows.map((s) => ({
       name: s.name,
       fired: s.fired,
