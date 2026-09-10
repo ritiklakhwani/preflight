@@ -68,3 +68,23 @@ describe('reading wallet-cli output', () => {
     expect(parseWalletCli('{"unrelated":true}').ok).toBe(false);
   });
 });
+
+describe('what counts as an approval', () => {
+  it('rejects wallet-cli\'s generic success envelope', () => {
+    // status:"success" means the command ran. `session view` returns it and
+    // that command never touches the device. Accepting it meant "the process
+    // exited normally" was being read as "a human pressed a button", on the
+    // one path where that distinction is the entire product.
+    const envelope = '{"status":"success","command":"session view","network":"all"}';
+    expect(parseWalletCli(envelope).ok).toBe(false);
+  });
+
+  it('accepts only an explicit ok:true', () => {
+    expect(parseWalletCli('{"ok":true,"data":{}}').ok).toBe(true);
+  });
+
+  it('carries the raw output back when it refuses, so a wrong assumption is diagnosable', () => {
+    const r = parseWalletCli('{"status":"success","command":"receive"}');
+    expect(r.message).toContain('receive');
+  });
+});

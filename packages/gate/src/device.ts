@@ -178,7 +178,23 @@ export async function confirmOnDevice(opts: DeviceOptions = {}): Promise<GateOut
 
 /**
  * wallet-cli emits one JSON object per line and the interesting one is last.
- * The exit code is not usable: a missing device produces ok:false and exit 0.
+ *
+ * Only an explicit `ok: true` is an approval. Nothing else is, and the reason
+ * is worth stating because the first version of this got it wrong.
+ *
+ * It also accepted `status: "success"`, which looked like a reasonable
+ * fallback and is not. That field is wallet-cli's generic envelope meaning the
+ * command ran: `session view` returns it and that command never touches the
+ * device. So the parser was treating "the process exited normally" as "a human
+ * pressed a button", on the one path in this project where that distinction is
+ * the entire product.
+ *
+ * Found by an agent reading this file during a live test, which is a better
+ * argument for shipping readable source than anything in the README.
+ *
+ * If a genuine approval turns out not to carry `ok: true`, this will refuse a
+ * real press. That is the safe direction to be wrong in, and the raw output
+ * comes back in the reason so the shape can be corrected in one pass.
  */
 export function parseWalletCli(output: string): { ok: boolean; message: string } {
   const lines = output
@@ -191,19 +207,23 @@ export function parseWalletCli(output: string): { ok: boolean; message: string }
       const parsed = JSON.parse(lines[i]!) as {
         ok?: boolean;
         error?: { message?: string };
-        status?: string;
       };
-      if (typeof parsed.ok === 'boolean') {
-        return {
-          ok: parsed.ok,
-          message: parsed.error?.message ?? (parsed.ok ? 'confirmed on device' : 'declined'),
-        };
+      if (parsed.ok === true) return { ok: true, message: 'confirmed on device' };
+      if (parsed.ok === false) {
+        return { ok: false, message: parsed.error?.message ?? 'declined on device' };
       }
-      if (parsed.status === 'success') return { ok: true, message: 'confirmed on device' };
     } catch {
       continue;
     }
   }
-  // Unreadable output is not an approval.
-  return { ok: false, message: 'wallet-cli produced no readable result' };
+  // No explicit approval anywhere in the output. Carry a slice of what was
+  // actually said, so a wrong assumption about the success shape is one test
+  // away from being fixed rather than a mystery.
+  const tail = lines.slice(-2).join(' ').slice(0, 200);
+  return {
+    ok: false,
+    message: tail
+      ? `no approval in wallet-cli output: ${tail}`
+      : 'wallet-cli produced no readable result',
+  };
 }
