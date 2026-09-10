@@ -57,6 +57,46 @@ function canHaltTransfers(code: string): boolean {
   return PAUSABLE_TRANSFER.test(code) || INLINE_PAUSE_CHECK.test(code);
 }
 
+/**
+ * A transfer hook that constrains who may send or receive.
+ *
+ * The third mechanism, and the one that produced the sharpest miss. Both
+ * patterns above look for blocklists: named lists of addresses that may not
+ * trade. This looks for the inverse, an allowlist, which is strictly worse for
+ * a holder and reads nothing like a blacklist in source.
+ *
+ * ease.org, which our own demo scores HIGH for other reasons, contains:
+ *
+ *   function _beforeTokenTransfer(address from, address to, uint256 amount)
+ *     internal virtual override {
+ *       require(from == owner || to == owner, "Only owner may interact");
+ *   }
+ *
+ * Buy it and you cannot sell to anyone but the deployer. That is a honeypot in
+ * the purest sense and transfer-restrictions reported the token clean.
+ *
+ * Vocabulary cannot find this, because there is no vocabulary: it is an
+ * ordinary require on ordinary parameter names. So this walks the transfer-path
+ * hooks and looks for a require that constrains `from` or `to`, discarding the
+ * zero-address guard that every OpenZeppelin token carries in the same place.
+ */
+const TRANSFER_HOOKS =
+  /function\s+(_beforeTokenTransfer|_afterTokenTransfer|_update|_transfer)\s*\([^)]*\)[^{]*\{[\s\S]{0,800}?\n\s*\}/gi;
+const PARTY_NAMES = /\b(from|to|sender|recipient|_from|_to|src|dst)\b/i;
+/** `require(to != address(0))` is boilerplate, not a restriction. */
+const ZERO_ADDRESS_GUARD = /address\s*\(\s*0\s*\)|!=\s*0\b|== address\(0\)/i;
+
+function restrictsParties(code: string): boolean {
+  const hooks = code.match(TRANSFER_HOOKS) ?? [];
+  for (const body of hooks) {
+    for (const clause of body.match(/require\s*\([^;]*\)/gi) ?? []) {
+      if (ZERO_ADDRESS_GUARD.test(clause)) continue;
+      if (PARTY_NAMES.test(clause)) return true;
+    }
+  }
+  return false;
+}
+
 export function structural(src: SourceCodeResult | null): Pick<
   AnalysisResult,
   'verified' | 'contractName' | 'compilerVersion' | 'isProxy' | 'implementationAddress' |
@@ -103,7 +143,8 @@ export function structural(src: SourceCodeResult | null): Pick<
     isErc20,
     ownerOnlyFunctions: OWNER_HINTS.test(code) ? ownerOnlyFunctions : [],
     hasSelfDestruct: /selfdestruct|suicide\s*\(/i.test(code),
-    hasTransferRestrictions: ADDRESS_GATE.test(code) || canHaltTransfers(code),
+    hasTransferRestrictions:
+      ADDRESS_GATE.test(code) || canHaltTransfers(code) || restrictsParties(code),
   };
 }
 

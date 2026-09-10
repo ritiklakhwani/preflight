@@ -59,6 +59,32 @@ describe('hasTransferRestrictions', () => {
     expect(structural(src(adminOnly)).hasTransferRestrictions).toBe(false);
   });
 
+  it('detects an allowlist, not just a blocklist', () => {
+    // ease.org, verbatim. Only the owner may send or receive, so anyone who
+    // buys cannot sell. A honeypot in the purest form, and it reads nothing
+    // like a blacklist: ordinary require, ordinary parameter names, no
+    // vocabulary to match on. Both earlier patterns reported it clean.
+    const honeypot = `
+      function _beforeTokenTransfer(address from, address to, uint256 amount)
+        internal virtual override {
+          require(from == owner || to == owner, "Only owner may interact with this token.");
+          amount;
+      }`;
+    expect(structural(src(honeypot)).hasTransferRestrictions).toBe(true);
+  });
+
+  it('ignores the zero-address guard every OpenZeppelin token carries', () => {
+    // This sits in the same hook, in the same shape, in essentially every
+    // ERC-20 ever deployed. Matching it would flag the entire chain.
+    const boilerplate = `
+      function _transfer(address from, address to, uint256 amount) internal virtual {
+        require(from != address(0), "ERC20: transfer from the zero address");
+        require(to != address(0), "ERC20: transfer to the zero address");
+        _balances[from] -= amount;
+      }`;
+    expect(structural(src(boilerplate)).hasTransferRestrictions).toBe(false);
+  });
+
   it('does not fire on an immutable token', () => {
     const weth = `function transfer(address dst, uint wad) public returns (bool) {
       return transferFrom(msg.sender, dst, wad); }`;
