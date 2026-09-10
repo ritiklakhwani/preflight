@@ -73,8 +73,20 @@ text claiming to close the tag is itself part of the untrusted content.
 
 Requires Node 22 or later and a checkout of this repository with `pnpm install` run.
 
-Claude Desktop, in `claude_desktop_config.json`. Cursor, in `~/.cursor/mcp.json` or
-`.cursor/mcp.json` inside a project.
+**Claude Code** needs nothing. This repository ships a project-scoped
+`.mcp.json`, so cloning it is enough:
+
+```bash
+cd preflight
+claude
+```
+
+Approve the project's MCP server when prompted, then `/mcp` lists the three
+tools. Start Claude Code from inside the repository: it looks for `.mcp.json`
+wherever the session began, so running it from a parent directory finds nothing.
+
+**Claude Desktop**, in `claude_desktop_config.json`. **Cursor**, in
+`~/.cursor/mcp.json` or `.cursor/mcp.json` inside a project.
 
 ```json
 {

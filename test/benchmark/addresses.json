@@ -131,8 +131,8 @@
       "address": "0x349F9d9fAE854eF6f52B2475AF3868427a0458bB",
       "chainId": 1,
       "label": "AA (Astra)",
-      "expect": "medium",
-      "why": "1.3 days old, single pool holding $20,000 with one transaction, 207 holders. Exercises pool-age. The label is what Preflight should say, not a claim about the token's eventual fate: anything this new warrants reporting before acting"
+      "expect": "clean",
+      "why": "TIME SENSITIVE. When added on 2026-09-09 its only pool was 1.3 days old and pool-age fired for MEDIUM 50. It is now past the 48-hour window and correctly scores clean, which is the signal switching off as a pool matures. A fixed address cannot hold a time-relative signal open; use scripts/find-candidates.ts to get a fresh one when pool-age needs live verification. The deterministic test for it lives in packages/signals/test/behavioural.test.ts"
     },
     {
       "address": "0x3ef84e740a02ba4853c5f689c342210a0f0a0cf2",

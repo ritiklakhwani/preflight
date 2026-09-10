@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "preflight": {
+      "type": "stdio",
+      "command": "./bin/preflight-mcp",
+      "args": [],
+      "env": {}
+    }
+  }
+}
