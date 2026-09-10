@@ -226,6 +226,7 @@ describe('deployer-history', () => {
         deployments,
         sampled: 100,
         truncated: true,
+        lastDeployedAt: now() - firstSeenDaysAgo * DAY,
       },
     });
 

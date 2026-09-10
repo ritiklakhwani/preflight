@@ -423,9 +423,18 @@ export const holderConcentration: Signal = {
  *
  * The pattern being matched is a factory: an address that did not exist last
  * month and has already shipped several contracts. Neither half means much
- * alone. Plenty of honest projects deploy from a fresh address, and plenty of
- * prolific deployers are infrastructure teams years into their history. The
- * conjunction is what is rare and what precedes a rug.
+ * alone, and the count least of all. Measured:
+ *
+ *   ease.org deployer   38 contracts, 8 of them flagged elsewhere as honeypots
+ *   DAI deployer       165 contracts, MakerDAO
+ *
+ * Volume does not separate those, so the signal fires on the conjunction with
+ * recency and reports the raw count either way. What it cannot do is recognise
+ * an established serial scammer: an address five years old that shipped its
+ * honeypots in 2021 looks exactly like an address five years old that shipped
+ * infrastructure in 2021. Telling those apart needs a labelled database of bad
+ * contracts, which is a different product. The limit is stated here rather than
+ * papered over, because the signal's name promises more than it delivers.
  */
 const NEW_DEPLOYER_DAYS = 30;
 const PROLIFIC_DEPLOYMENTS = 3;
@@ -454,16 +463,20 @@ export const deployerHistory: Signal = {
       return { fired: false, evidence: [], error: `deployer history: ${ctx.deployer.error}` };
     }
 
-    const { firstSeen, deployments, sampled, truncated } = ctx.deployer;
+    const { firstSeen, deployments, sampled, truncated, lastDeployedAt } = ctx.deployer;
     const age = firstSeen > 0 ? daysOld(firstSeen) : Number.POSITIVE_INFINITY;
-    const window = truncated ? `last ${sampled} transactions` : 'entire history';
+    const window = truncated ? `first ${sampled} transactions` : 'entire history';
+    const lastDeploy =
+      lastDeployedAt && lastDeployedAt > 0
+        ? `, most recent ${daysOld(lastDeployedAt).toFixed(0)} days ago`
+        : '';
 
     const evidence: Evidence[] = [
       {
         label: 'deployer',
         value: `${ctx.analysis.creator ?? 'unknown'}, first seen ${
           Number.isFinite(age) ? age.toFixed(0) + ' days ago' : 'unknown'
-        }, ${deployments} contract deployment(s) in its ${window}`,
+        }, ${deployments} contract deployment(s) in its ${window}${lastDeploy}`,
         link: EXPLORERS[ctx.chainId]
           ? `${EXPLORERS[ctx.chainId]}/address/${ctx.analysis.creator}`
           : undefined,

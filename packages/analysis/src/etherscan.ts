@@ -14,6 +14,37 @@
 
 const V2 = 'https://api.etherscan.io/v2/api';
 
+/**
+ * Etherscan's free tier allows three calls a second, and it says so in the
+ * error rather than in a header. One verdict now makes up to five: source,
+ * creation record, proxy implementation, deployer history, holder diversity.
+ * Several of those were deliberately fired in parallel for latency, which is
+ * exactly how the limit gets hit.
+ *
+ * A throttled request is slower. A rate-limited one silently becomes a signal
+ * that could not run, and a verdict with fewer checks behind it, which is a
+ * worse trade. This spaces every call in the process so that cannot happen.
+ */
+const MIN_CALL_INTERVAL_MS = 360;
+let lastCallAt = 0;
+let queue: Promise<unknown> = Promise.resolve();
+
+function throttle<T>(fn: () => Promise<T>): Promise<T> {
+  const run = queue.then(async () => {
+    const wait = Math.max(0, lastCallAt + MIN_CALL_INTERVAL_MS - Date.now());
+    if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+    lastCallAt = Date.now();
+    return fn();
+  });
+  // Keep the chain alive even when a call rejects, or one failure stalls
+  // every request behind it.
+  queue = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  return run;
+}
+
 export interface SourceCodeResult {
   SourceCode: string;
   ABI: string;
@@ -32,10 +63,14 @@ function detail(body: { message: string; result: unknown }): string {
 
 async function call<T>(params: Record<string, string>): Promise<T> {
   const key = process.env.ETHERSCAN_API_KEY;
-  if (!key) throw new Error('ETHERSCAN_API_KEY is not set');
+  if (!key) {
+    throw new Error(
+      'ETHERSCAN_API_KEY is not set. One free key covers every chain: https://etherscan.io/apis',
+    );
+  }
 
   const url = `${V2}?${new URLSearchParams({ ...params, apikey: key })}`;
-  const res = await fetch(url);
+  const res = await throttle(() => fetch(url));
   if (!res.ok) throw new Error(`Etherscan HTTP ${res.status}`);
 
   const body = (await res.json()) as { status: string; message: string; result: T };
@@ -87,7 +122,13 @@ export async function fetchContractCreation(
   chainId: number,
 ): Promise<CreationResult> {
   const key = process.env.ETHERSCAN_API_KEY;
-  if (!key) return { status: 'error', error: 'ETHERSCAN_API_KEY is not set' };
+  if (!key) {
+    return {
+      status: 'error',
+      error:
+        'ETHERSCAN_API_KEY is not set. One free key covers every chain: https://etherscan.io/apis',
+    };
+  }
 
   const url = `${V2}?${new URLSearchParams({
     chainid: String(chainId),
@@ -98,7 +139,7 @@ export async function fetchContractCreation(
   })}`;
 
   try {
-    const res = await fetch(url);
+    const res = await throttle(() => fetch(url));
     if (!res.ok) return { status: 'error', error: `Etherscan HTTP ${res.status}` };
 
     const body = (await res.json()) as {
@@ -132,36 +173,45 @@ export async function fetchContractCreation(
 /**
  * What else this deployer has done.
  *
- * The scam-factory pattern is an address that appeared recently and has
- * already shipped a handful of contracts. A deployer with years of history
- * behind it is not proof of anything, but it is a different risk profile, and
- * it is knowable before signing.
+ * One call over the address's whole history, oldest first. The first entry
+ * gives its age; contract creations anywhere in the window give what it has
+ * shipped.
  *
- * Two calls, because they need opposite ends of the history. The first
- * transaction ever gives the address's age. The most recent transactions give
- * what it is doing now.
+ * This has been wrong twice, in opposite directions, and both were found by
+ * checking a real address rather than by reading the code.
  *
- * The first version asked for the oldest 100 transactions and counted
- * deployments in those, which is structurally wrong: for any address with
- * history, the contract under review was deployed long after that window
- * closed. It reported zero deployments for a deployer that had demonstrably
- * deployed the contract being checked.
+ * The first version sampled the OLDEST 100 transactions and counted deploys in
+ * those, so for any address with history the contract under review had been
+ * deployed long after that window closed. It reported zero for a deployer that
+ * had demonstrably deployed the contract being checked.
+ *
+ * The second sampled the NEWEST 100, which fixed that case and broke another.
+ * ease.org's deployer shipped 38 contracts between April and November 2021 and
+ * has transacted since, so a hundred-transaction window five years later saw
+ * none of them. An external scanner flagged eight of those 38 as honeypots
+ * while we reported the deployer as clean.
+ *
+ * A wide window costs one request either way, so there is no reason to guess
+ * which end of the history matters.
  */
 export type DeployerResult =
   | {
       status: 'ok';
       /** Unix seconds of the deployer's first ever transaction. */
       firstSeen: number;
-      /** Contract creations within the most recent sampled transactions. */
+      /** Contract creations found in the sampled window. */
       deployments: number;
-      /** How many transactions were sampled for that count. */
+      /** How many transactions were sampled. */
       sampled: number;
-      /** True when the window filled, so `deployments` is a floor. */
+      /** True when the window filled, so the counts are floors. */
       truncated: boolean;
+      /** Unix seconds of the most recent deployment, when there is one. */
+      lastDeployedAt: number | null;
     }
   | { status: 'error'; error: string };
 
-const DEPLOYER_PAGE = 100;
+/** Etherscan caps a page well below this; asking for more costs nothing. */
+const DEPLOYER_PAGE = 1000;
 
 interface RawTx {
   to: string;
@@ -173,31 +223,30 @@ export async function fetchDeployerProfile(
   creator: string,
   chainId: number,
 ): Promise<DeployerResult> {
-  const base = {
-    chainid: String(chainId),
-    module: 'account',
-    action: 'txlist',
-    address: creator,
-    startblock: '0',
-    endblock: '99999999',
-    page: '1',
-  };
-
   try {
-    const [oldest, recent] = await Promise.all([
-      call<RawTx[]>({ ...base, offset: '1', sort: 'asc' }),
-      call<RawTx[]>({ ...base, offset: String(DEPLOYER_PAGE), sort: 'desc' }),
-    ]);
+    const txs = await call<RawTx[]>({
+      chainid: String(chainId),
+      module: 'account',
+      action: 'txlist',
+      address: creator,
+      startblock: '0',
+      endblock: '99999999',
+      page: '1',
+      offset: String(DEPLOYER_PAGE),
+      sort: 'asc',
+    });
 
     // A contract creation has an empty `to` and returns the created address.
-    const deployments = recent.filter((t) => !t.to && t.contractAddress).length;
+    const deploys = txs.filter((t) => !t.to && t.contractAddress);
+    const last = deploys[deploys.length - 1];
 
     return {
       status: 'ok',
-      firstSeen: Number(oldest[0]?.timeStamp ?? 0),
-      deployments,
-      sampled: recent.length,
-      truncated: recent.length >= DEPLOYER_PAGE,
+      firstSeen: Number(txs[0]?.timeStamp ?? 0),
+      deployments: deploys.length,
+      sampled: txs.length,
+      truncated: txs.length >= DEPLOYER_PAGE,
+      lastDeployedAt: last ? Number(last.timeStamp) : null,
     };
   } catch (err) {
     return { status: 'error', error: err instanceof Error ? err.message : String(err) };

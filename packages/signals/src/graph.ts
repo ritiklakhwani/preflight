@@ -218,7 +218,11 @@ function toPool(raw: RawPool): Pool {
 
 export async function gql<T>(subgraphId: string, query: string, variables: unknown): Promise<T> {
   const key = env('GRAPH_API_KEY');
-  if (!key) throw new Error('GRAPH_API_KEY is not set');
+  if (!key) {
+    throw new Error(
+      'GRAPH_API_KEY is not set. Free key from Subgraph Studio: https://thegraph.com/studio',
+    );
+  }
 
   const res = await fetch(`${GATEWAY}/${key}/subgraphs/id/${subgraphId}`, {
     method: 'POST',

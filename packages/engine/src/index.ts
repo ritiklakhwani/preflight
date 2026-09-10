@@ -95,7 +95,13 @@ export async function runPreflight(
     // check on unverified contracts, since the ABI is what proves the ERC-20
     // surface, and an unverified contract with three holders is exactly the
     // case this signal exists for.
-    analysis.isErc20 || !analysis.verified ? fetchHolderDiversity(normalised, chainId) : null,
+    //
+    // A wallet is ruled out, though: it has no token transfers, so the call
+    // spends a request to learn nothing and then reports a failed check that
+    // reads as a coverage gap.
+    analysis.isContract !== false && (analysis.isErc20 || !analysis.verified)
+      ? fetchHolderDiversity(normalised, chainId)
+      : null,
   ]);
 
   const ctx: SignalContext = {
