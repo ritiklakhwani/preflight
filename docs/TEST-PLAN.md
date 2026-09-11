@@ -18,7 +18,7 @@ unfinished, **Low** cosmetic.
 |---|---|---|
 | 0.1 | `cd preflight && pnpm install` | Completes without error |
 | 0.2 | `pnpm db:up && pnpm db:init` | Container healthy. Re-running init prints "already exists" errors, which are harmless |
-| 0.3 | `security find-generic-password -a default -s ledger-wallet-cli -w` | Prints the passphrase. If it prints nothing, the Key Ring cannot decrypt and every credential fails |
+| 0.3 | `security find-generic-password -a default -s ledger-wallet-cli -w > /dev/null && echo FOUND` | Prints `FOUND`. Never drop the redirect: without it the command prints your Key Ring passphrase to the terminal, where it lands in scrollback and in anything you paste |
 | 0.4 | `wallet-cli --version` | `2.1.0` or later |
 | 0.5 | `pnpm check` | Exit 0, no output |
 | 0.6 | `pnpm test` | **142 passed**, 8 files |
@@ -33,7 +33,17 @@ security add-generic-password -a default -s ledger-wallet-cli -w
 
 ## Part 1 — Software flow, no device needed
 
-Set `PREFLIGHT_GATE=off` for this part so nothing blocks on hardware. Prefix each command.
+**`PREFLIGHT_GATE=off` is only needed for a HIGH address.** The gate is summoned by severity, so
+a `clean`, `low` or `medium` verdict never touches the device and the variable changes nothing.
+The benchmark and the probes never gate at all. You need it only when running `mcp-smoke.ts`
+against a HIGH address without a Ledger attached, and it goes at the front of the command:
+
+```bash
+PREFLIGHT_GATE=off node --env-file=.env --import tsx scripts/mcp-smoke.ts <address> <chainId>
+```
+
+Without it, a HIGH address with no device now refuses in about 13 seconds rather than hanging,
+so forgetting it costs you 13 seconds, not a broken run.
 
 ### 1.1 The server starts and decrypts its credentials
 
@@ -264,6 +274,26 @@ Note this only works if the Key Ring does not overwrite it; the Key Ring wins, s
 **Expected:** the four market signals report an error each. Coverage 7/11 is above the floor, so
 a verdict still returns with the gap stated. **High** if a gateway failure is reported as "this
 token has no market".
+
+### 3.9b The call always answers inside the caller's deadline
+
+The MCP client gives a tool call sixty seconds. Preflight must always return something
+inside that, because a transport timeout is not an answer: the agent learns nothing, and a
+judge sees a broken tool rather than a working refusal.
+
+Three things enforce it. Etherscan calls time out at 8s each, the model at 15s with retries
+disabled, and the gate is handed only the budget the analysis did not already spend.
+
+To see the last one, run a HIGH address with the device attached and do not press:
+
+```bash
+node --env-file=.env --import tsx scripts/mcp-smoke.ts 0x160de4468586B6B2F8a92FEB0c260fc6cFC743B1 1
+```
+
+**Expected:** a refusal naming the wait, with the total call comfortably under 60 seconds.
+**Failure looks like:** `McpError: MCP error -32001: Request timed out`, followed by an EPIPE
+stack trace from the server. **Critical.** That combination is exactly the bug this section
+exists to catch, and it happened on 2026-09-11.
 
 ### 3.10 Rate limit
 

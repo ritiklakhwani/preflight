@@ -162,6 +162,14 @@ out that scan left under a second of margin. `deviceAttached()` reads the USB tr
 about 47 milliseconds instead. Absent means refuse now and say so; present means there
 is budget to wait for a person.
 
+The wait itself is not a fixed number. The MCP client gives a tool call sixty
+seconds, analysis spends a variable part of that, and the gate is handed only
+what is left. Adding a constant wait to a variable analysis is how a call ends
+up exceeding its caller's limit, and when that happens the agent receives a
+transport timeout rather than a refusal. A timeout is not an answer. Etherscan
+calls are bounded at eight seconds each and the advisory model at fifteen with
+retries disabled, so no upstream stall can spend the budget either.
+
 ### Where the Uniswap integration lives
 
 Preflight deploys no contracts. It reads Uniswap V3 pool state and turns it into a risk
