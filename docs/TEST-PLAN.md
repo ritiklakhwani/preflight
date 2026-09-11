@@ -60,8 +60,17 @@ node --env-file=.env --import tsx scripts/mcp-smoke.ts 0x6B175474E89094C44Da98b9
 [mcp] ready on stdio
 ```
 
-Then `TOOLS` listing `preflight_check`, `preflight_explain`, `preflight_recent`, and a verdict
-reading **LOW 20/100, coverage 11/11**, in roughly 12 seconds.
+Then `TOOLS` listing the three tools, and a verdict whose first three lines are:
+
+```
+PREFLIGHT  LOW 20/100
+address    0x6b175474e89094c44da98b954eedeac495271d0f  (chain 1)
+checks     11 of 11 completed
+```
+
+The answer is the first line. Findings appear under `WHY`, heaviest first. Checks that found
+nothing are named under `CLEAR` without their evidence; checks that could not run are never
+collapsed, because a gap is not a finding. Add `--full` to print the complete evidence view.
 
 **Failure looks like:** `key ring:` lines reporting errors, or `storage: memory`. The first
 means no credentials, and every network signal will report it could not run. **Critical.**

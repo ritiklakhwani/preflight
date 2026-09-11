@@ -99,7 +99,7 @@ server.registerTool(
               text:
                 `Preflight could not complete enough checks to judge this address. ` +
                 `Only ${ran} of ${total} ran.\n\n` +
-                renderVerdict(verdict, { full: true }) +
+                renderVerdict(verdict) +
                 `\n\nTreat this as unknown risk, not absence of risk. Do not sign on the ` +
                 `assumption that the address is safe.`,
             },
@@ -121,7 +121,7 @@ server.registerTool(
                 `Refused. This address scored ${verdict.severity.toUpperCase()} and a human ` +
                 `did not approve it on the hardware device.\n\n` +
                 `Reason: ${verdict.gate.reason ?? 'not approved'}\n\n` +
-                renderVerdict(verdict, { full: true }) +
+                renderVerdict(verdict) +
                 `\n\nDo not sign anything against this address. Ask the user to connect ` +
                 `their Ledger and confirm on the device, then call preflight_check again.`,
             },

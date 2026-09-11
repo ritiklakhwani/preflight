@@ -48,10 +48,21 @@ const check = await client.callTool({ name: 'preflight_check', arguments: { addr
 console.log(text(check));
 console.log(`[${Date.now() - t0}ms]`);
 
+// The full evidence view is the same verdict again, at length. Printing both
+// back to back doubled the output of every run and pushed the answer off the
+// top of the screen, so it is summarised here and shown only on request.
 const id = text(check).match(/id ([0-9a-f]{8})/)?.[1];
 if (id) {
+  const full = text(await client.callTool({ name: 'preflight_explain', arguments: { verdictId: id } }));
   console.log('\n--- preflight_explain ---');
-  console.log(text(await client.callTool({ name: 'preflight_explain', arguments: { verdictId: id } })));
+  if (process.argv.includes('--full')) {
+    console.log(full);
+  } else {
+    const links = (full.match(/https:\/\//g) ?? []).length;
+    const notes = full.includes('MODEL NOTES') ? full.split('MODEL NOTES')[1]!.split('\n\n')[0]!.trim().split('\n').length : 0;
+    console.log(`resolved ${id}: full evidence, ${links} explorer links, ${notes} model notes.`);
+    console.log('Pass --full to print it.');
+  }
 }
 
 console.log('\n--- preflight_recent ---');

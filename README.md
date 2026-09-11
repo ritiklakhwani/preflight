@@ -133,6 +133,20 @@ Every path that is not an explicit approval is a refusal: no device, no
 `wallet-cli`, a timeout, a crash, unparseable output. See
 [`packages/gate/src/device.ts`](packages/gate/src/device.ts).
 
+**What the press proves, stated exactly.** The device displays an address and a
+person confirms it, so the press is evidence that a human was physically at the
+Ledger and consented at that moment. It is a proof of presence, not a signature
+over the transaction, and it does not bind the approval to specific calldata.
+Binding it would mean signing something structured, which needs gas and may need
+blind signing enabled: two more things to fail, on a check that runs before any
+transaction exists. Preflight signs nothing and holds no keys. It decides whether
+something else is allowed to, and for that a human at the device is the property
+worth enforcing.
+
+An approval is also not a clean bill of health. The verdict still reads HIGH and
+the findings still stand; the output says so. What changed is that a person saw
+them and chose to accept them.
+
 **`wallet-cli ring` as the key backend for the `.env` this repo already had.**
 API keys are encrypted against the Key Ring, committed as ciphertext in
 [`secrets/`](secrets/README.md), and decrypted at runtime. Neither encrypting nor

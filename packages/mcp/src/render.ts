@@ -60,30 +60,28 @@ export function renderVerdict(v: Verdict, opts: { full?: boolean } = {}): string
     return delimit(value, nonce);
   };
 
+  // The answer first, in four lines, before any evidence. A reader should not
+  // have to scroll to learn what the verdict was.
   out.push(
-    `PREFLIGHT VERDICT  id ${v.id}`,
-    `address   ${v.address}  (chain ${v.chainId})`,
-    `severity  ${v.severity.toUpperCase()}   score ${v.score}/100`,
-    '',
-    v.summary,
-    '',
+    `PREFLIGHT  ${v.severity.toUpperCase()} ${v.score}/100`,
+    `address    ${v.address}  (chain ${v.chainId})`,
+    `checks     ${v.coverage.ran} of ${v.coverage.total} completed`,
   );
-
-  if (v.coverage.ran < v.coverage.total) {
-    out.push(
-      `COVERAGE: ${v.coverage.ran} of ${v.coverage.total} checks completed. The rest could`,
-      'not run, and their findings are unknown rather than absent.',
-      '',
-    );
-  }
 
   if (v.gate?.required) {
     out.push(
       v.gate.approved
-        ? 'GATE: approved by a human on a Ledger device.'
-        : `GATE: REFUSED. ${sentence(v.gate.reason ?? 'not approved')}`,
+        ? 'gate       APPROVED on a Ledger device'
+        : `gate       REFUSED. ${sentence(v.gate.reason ?? 'not approved')}`,
+    );
+  }
+  out.push('', v.summary, '');
+
+  if (v.gate?.required) {
+    out.push(
       v.gate.approved
-        ? 'A person confirmed this on hardware. You may proceed.'
+        ? 'A person confirmed this on hardware and you may proceed. The findings ' +
+          'below were not cleared: someone chose to accept them.'
         : 'Nobody approved this on hardware. Do not sign against this address.',
       '',
     );
@@ -96,18 +94,58 @@ export function renderVerdict(v: Verdict, opts: { full?: boolean } = {}): string
     );
   }
 
-  out.push('SIGNALS');
-  for (const s of v.signals) {
-    const state = s.error ? 'ERROR' : s.fired ? 'FIRED' : 'clear';
-    out.push(`  [${state}] ${s.name}  (weight ${s.weight})`);
-    if (s.error) out.push(`          ${s.error}`);
-    for (const e of s.evidence) {
+  if (v.coverage.ran < v.coverage.total) {
+    out.push(
+      `COVERAGE: ${v.coverage.ran} of ${v.coverage.total} checks completed. The rest could`,
+      'not run, and their findings are unknown rather than absent.',
+      '',
+    );
+  }
+
+  // Findings before non-findings, heaviest first. Eleven signals in
+  // declaration order buries the three that matter among the eight that do
+  // not, and the reader has to reconstruct the argument themselves.
+  const detail = (sig: Verdict['signals'][number], label: string, linked = false) => {
+    out.push(`  [${label}] ${sig.name}  (weight ${sig.weight})`);
+    if (sig.error) out.push(`          ${sig.error}`);
+    for (const e of sig.evidence) {
       const value = e.untrusted ? mark(e.value) : e.value;
       out.push(`          ${e.label}: ${value}`);
-      if (e.link && opts.full) out.push(`          ${e.link}`);
+      // A finding without somewhere to go and check it is an assertion. Fired
+      // signals keep their explorer link even in the short view; checks that
+      // found nothing do not need one until someone asks for everything.
+      if (e.link && (linked || opts.full)) out.push(`          ${e.link}`);
     }
+  };
+
+  const fired = v.signals.filter((s) => !s.error && s.fired).sort((a, b) => b.weight - a.weight);
+  const failed = v.signals.filter((s) => s.error);
+  const clear = v.signals.filter((s) => !s.error && !s.fired);
+
+  if (fired.length) {
+    out.push('WHY');
+    for (const sig of fired) detail(sig, 'FIRED', true);
+    out.push('');
   }
-  out.push('');
+
+  // A check that could not run is a gap in what we know, so it is never
+  // collapsed away. A clear one is, unless the caller asked for everything.
+  if (failed.length) {
+    out.push('COULD NOT RUN');
+    for (const sig of failed) detail(sig, 'ERROR');
+    out.push('');
+  }
+
+  if (clear.length) {
+    if (opts.full) {
+      out.push('CLEAR');
+      for (const sig of clear) detail(sig, 'clear');
+    } else {
+      out.push(`CLEAR  ${clear.length} checks found nothing:`);
+      out.push(`  ${clear.map((s) => s.name).join(', ')}`);
+    }
+    out.push('');
+  }
 
   const a = v.analysis;
   out.push('CONTRACT');
@@ -155,7 +193,10 @@ export function renderVerdict(v: Verdict, opts: { full?: boolean } = {}): string
   }
 
   if (!opts.full) {
-    out.push('', `Full evidence and links: preflight_explain with verdictId "${v.id}".`);
+    out.push(
+      '',
+      `id ${v.id}. Full evidence, explorer links and model notes: preflight_explain.`,
+    );
   }
 
   return out.join('\n');
