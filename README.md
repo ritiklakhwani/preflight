@@ -59,8 +59,8 @@ git diff ethonline-2026-start..HEAD
 | `packages/engine` | NEW | shipped | Composes analysis, signals and scoring into one verdict, and persists it |
 | `packages/mcp` | NEW | shipped | The MCP server an agent installs. Three tools, with untrusted on-chain strings delimited before they reach a model |
 | `packages/quarantine` | NEW | shipped | Injection detection on untrusted on-chain strings, and prompt spotlighting before a model reads contract source |
-| `packages/gate` | NEW | planned | Ledger confirmation service; Key Ring credential storage |
-| `packages/console` | NEW | planned | Live verdict stream and quarantine diff |
+| `packages/gate` | NEW | shipped | Ledger device confirmation in front of a `high` verdict, and `wallet-cli ring` as the credential store for the keys this repo used to hold in plaintext |
+| `packages/console` | NEW | cut | A verdict dashboard was planned and dropped. The MCP client is the product surface, and nothing in the project depends on a second one |
 
 This table is updated as packages land, so what it claims and what runs stay the same thing.
 
@@ -146,11 +146,21 @@ never has one. It is never written to a file and never appears in the client
 configuration.
 
 ```
-PREFLIGHT_GATE=off   skip the device. Records the verdict as not approved by a
-                     human rather than as approved, because nobody pressed anything.
-GATE_TIMEOUT_MS      how long someone has to press. Default 45000, deliberately
-                     under the MCP client's 60s request timeout.
+PREFLIGHT_GATE=off       skip the device. Records the verdict as not approved by a
+                         human rather than as approved, because nobody pressed anything.
+GATE_TIMEOUT_MS          how long someone has to press once a device is known to be
+                         attached. Default 40000.
+PREFLIGHT_SKIP_USB_PROBE disable the presence check and let wallet-cli discover the
+                         device itself, which takes about a minute when there is none.
 ```
+
+Neither `wallet-cli receive --verify` nor `genuine-check` fails fast with no device
+attached: both scan for roughly a minute, measured at 61 and 62 seconds. The whole
+`preflight_check` call has to finish inside the MCP client's 60 second request
+timeout, and the analysis ahead of the gate already spends about twelve, so waiting
+out that scan left under a second of margin. `deviceAttached()` reads the USB tree in
+about 47 milliseconds instead. Absent means refuse now and say so; present means there
+is budget to wait for a person.
 
 ### Where the Uniswap integration lives
 
@@ -160,11 +170,13 @@ call. For verification:
 
 | What | Where |
 |---|---|
-| Chain-to-deployment mapping, and the two pool queries | [`packages/signals/src/graph.ts`](packages/signals/src/graph.ts) |
-| `liquidity-reality`: value locked against transaction count | [`packages/signals/src/behavioural.ts`](packages/signals/src/behavioural.ts) |
-| `thin-liquidity`: whether a swap can be executed here at all | same file |
-| `pool-age`: `createdAtTimestamp` on the deepest pool | same file |
-| `no-market`: no V3 pool on either side of the pair | same file |
+| Chain-to-deployment mapping, the three subgraph ids | [`graph.ts:30-34`](packages/signals/src/graph.ts#L30-L34) |
+| The two pool queries, both sides of the pair | [`graph.ts:161-173`](packages/signals/src/graph.ts#L161-L173) |
+| The gateway call, authenticated with a Subgraph Studio key | [`graph.ts:219-244`](packages/signals/src/graph.ts#L219-L244) |
+| `no-market`: no V3 pool on either side of the pair | [`behavioural.ts:118`](packages/signals/src/behavioural.ts#L118) |
+| `pool-age`: `createdAtTimestamp` on the deepest pool | [`behavioural.ts:167`](packages/signals/src/behavioural.ts#L167) |
+| `liquidity-reality`: value locked against transaction count | [`behavioural.ts:230`](packages/signals/src/behavioural.ts#L230) |
+| `thin-liquidity`: whether a swap can be executed here at all | [`behavioural.ts:317`](packages/signals/src/behavioural.ts#L317) |
 | How the thresholds were calibrated against real pools | [`docs/verifying-weights.md`](docs/verifying-weights.md) |
 | Labelled addresses and the verdicts they produce | [`test/benchmark/addresses.json`](test/benchmark/addresses.json) |
 
@@ -176,6 +188,13 @@ Ledger is in [docs/feedback-ledger.md](docs/feedback-ledger.md).
 The weights are a claim about how much each finding matters on its own. See
 [docs/verifying-weights.md](./docs/verifying-weights.md) for how to check them,
 plus `scripts/weights.ts` and `scripts/benchmark.ts`.
+
+### Checking it yourself
+
+| Document | What it is for |
+|---|---|
+| [docs/TEST-PLAN.md](./docs/TEST-PLAN.md) | Every case worth trying, including the hardware ones: device locked, unplugged mid-wait, rejected on the device. Exact commands and exact expected output |
+| [docs/SUBMISSION-AUDIT.md](./docs/SUBMISSION-AUDIT.md) | What is built, what each partner integration does and where, the architecture, and the known limits |
 
 ## AI tool usage
 

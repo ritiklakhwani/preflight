@@ -114,8 +114,13 @@ node --env-file=.env --import tsx scripts/mcp-smoke.ts 0x6B175474E89094C44Da98b9
 
 ## Keys
 
-`ETHERSCAN_API_KEY` is required. One of `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` enables the
-advisory model summary; without either, the deterministic verdict still stands.
+`ETHERSCAN_API_KEY` and `GRAPH_API_KEY` are required. One of `ANTHROPIC_API_KEY` or
+`OPENAI_API_KEY` enables the advisory model summary; without either, the deterministic verdict
+still stands.
+
+In this repository all three are held as ciphertext in `secrets/`, encrypted against a Ledger
+Key Ring trustchain, and decrypted at startup. No plaintext credential exists on disk. If you
+are running your own copy, `.env` works exactly as it always did.
 
 `DATABASE_URL` is optional. With Postgres reachable, verdicts persist across restarts and
 the console can read them. Without it, verdicts live in memory for the life of the process.
