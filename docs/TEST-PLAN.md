@@ -130,11 +130,22 @@ node --env-file=.env --import tsx scripts/mcp-smoke.ts 0x160de4468586B6B2F8a92FE
 
 ease.org scores HIGH, which is what summons the device. Note the elapsed `[Nms]` line each time.
 
+**Precondition for every case from 2.3 onward: unlock the Ledger with your PIN and open the
+Ethereum app before starting the command.** A locked device is case 2.2, not case 2.3, and it
+cannot be unlocked in time once the command is already running. The gate now tells you which
+state it is in as it waits:
+
+```
+[gate] Ledger is locked. Enter your PIN on the device.
+```
+
+If you see that line during 2.3, stop, unlock, and start again.
+
 | # | Set up | Expected | Severity if wrong |
 |---|---|---|---|
 | 2.1 | **No device plugged in** | Refused in **about 13 seconds total**. Reason: `no Ledger detected over USB. Connect the device, unlock it, and run this check again` | **Critical.** This is the Ledger claim |
-| 2.2 | **Plugged in, locked, PIN not entered** | Refused. wallet-cli reports no usable device. Must not hang past 40s | High |
-| 2.3 | **Plugged in, unlocked, no app open** | Device shows the address to verify. Press both buttons. Verdict returns `GATE: approved by a human on a Ledger device` | **Critical** |
+| 2.2 | **Plugged in, locked, PIN not entered** | Refused, naming the real cause: `Ledger is locked. Enter your PIN on the device. Unlock it, then run this check again.` A `[gate]` line says the same thing while it waits | High |
+| 2.3 | **Unlocked, Ethereum app open** | Device shows the address to verify. Press both buttons. Verdict returns `GATE: approved by a human on a Ledger device` | **Critical** |
 | 2.4 | **Plugged in, unlocked, press reject** | Refused with the device's own reason. Agent told not to sign | **Critical** |
 | 2.5 | **Plugged in, press nothing** | Refused after about 40 seconds with `no confirmation within 40s`. Total call under 55s | High |
 | 2.6 | **Unplug while it is waiting** | Refused. Must not hang. The reason will be wallet-cli's, not the probe's | High |

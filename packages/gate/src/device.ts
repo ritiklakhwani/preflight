@@ -237,6 +237,22 @@ export async function confirmOnDevice(opts: DeviceOptions = {}): Promise<GateOut
     let stdout = '';
     let stderr = '';
     let settled = false;
+    /** The device's own last words, used as the reason if nothing is approved. */
+    let lastState: DeviceProgress | null = null;
+
+    // Narrate progress as it happens. Waiting up to forty seconds in silence
+    // and then failing is the difference between a tool that seems broken and
+    // one that is telling you to unlock your Ledger.
+    const watch = (chunk: string) => {
+      for (const line of chunk.split('\n')) {
+        const progress = readProgress(line.trim());
+        if (!progress) continue;
+        if (progress.message !== lastState?.message) {
+          process.stderr.write(`[gate] ${progress.message}\n`);
+        }
+        lastState = progress;
+      }
+    };
 
     const finish = (outcome: GateOutcome) => {
       if (settled) return;
@@ -249,24 +265,93 @@ export async function confirmOnDevice(opts: DeviceOptions = {}): Promise<GateOut
     // wallet-cli's own timeout flag did not take effect in v2.1.0, so this is
     // the one that actually bounds the wait.
     const timer = setTimeout(
-      () => finish(DENIED(`no confirmation within ${Math.round(timeoutMs / 1000)}s`)),
+      () =>
+        finish(
+          DENIED(
+            explain(`no confirmation within ${Math.round(timeoutMs / 1000)}s`, lastState),
+          ),
+        ),
       timeoutMs + 2_000,
     );
 
-    child.stdout.on('data', (c) => (stdout += String(c)));
-    child.stderr.on('data', (c) => (stderr += String(c)));
+    child.stdout.on('data', (c) => {
+      stdout += String(c);
+      watch(String(c));
+    });
+    child.stderr.on('data', (c) => {
+      stderr += String(c);
+      watch(String(c));
+    });
 
     child.on('error', (err) => finish(DENIED(`could not run wallet-cli: ${err.message}`)));
 
     child.on('close', () => {
-      const result = parseWalletCli(stdout || stderr);
+      // Both streams, not one or the other. The previous version passed
+      // `stdout || stderr`, so once stdout carried anything at all, and it
+      // always carries the progress lines, stderr was never read. A genuine
+      // approval arriving there would have been refused, which is the same
+      // class of bug as accepting a non-approval, pointing the other way.
+      const result = parseWalletCli(`${stdout}\n${stderr}`);
       if (result.ok) {
         finish({ required: true, approved: true, method: 'device' });
       } else {
-        finish(DENIED(result.message));
+        finish(DENIED(explain(result.message, lastState)));
       }
     });
   });
+}
+
+/**
+ * wallet-cli narrates what the device is doing, one JSON object per line.
+ *
+ * We ignored this stream entirely and it cost a test run. The device was
+ * locked, wallet-cli said so in plain English in a `device-state` line, and the
+ * gate discarded it and reported `no approval in wallet-cli output:` followed
+ * by 200 characters of truncated JSON. The person standing at the device was
+ * told nothing they could act on, while the answer sat in the output unread.
+ *
+ * Two states matter. `reason: "unlock"` means the Ledger is locked and no
+ * amount of waiting helps until a PIN is entered. Anything else under
+ * `awaiting_approval` means the prompt is on screen and a press is what is
+ * missing.
+ */
+/**
+ * The reason a person actually needs.
+ *
+ * Prefer whatever the device last said about itself over our own generic
+ * wording, because wallet-cli's messages are already written for a human and
+ * ours are written for a log. "Ledger is locked. Enter your PIN on the device"
+ * tells someone what to do next; "no confirmation within 40s" does not.
+ */
+function explain(fallback: string, state: DeviceProgress | null): string {
+  if (!state) return fallback;
+  if (state.locked) {
+    return `${state.message} Unlock it, then run this check again.`;
+  }
+  return `${state.message} (${fallback})`;
+}
+
+export interface DeviceProgress {
+  /** wallet-cli's own wording, which is already written for a human. */
+  message: string;
+  locked: boolean;
+}
+
+export function readProgress(line: string): DeviceProgress | null {
+  try {
+    const parsed = JSON.parse(line) as {
+      type?: string;
+      message?: string;
+      state?: { code?: string; reason?: string };
+    };
+    if (parsed.type !== 'device-state') return null;
+    return {
+      message: parsed.message ?? parsed.state?.code ?? 'device state changed',
+      locked: parsed.state?.reason === 'unlock',
+    };
+  } catch {
+    return null;
+  }
 }
 
 /**

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { GATE_SEVERITY, gateEnabled, runGate } from '../src/index.js';
-import { parseWalletCli } from '../src/device.js';
+import { parseWalletCli, readProgress } from '../src/device.js';
 
 const original = process.env['PREFLIGHT_GATE'];
 afterEach(() => {
@@ -50,14 +50,14 @@ describe('the wait is capped by the caller\'s remaining budget', () => {
     else process.env['GATE_TIMEOUT_MS'] = originalTimeout;
   });
 
-  it('refuses in well under the budget when no device is attached', async () => {
-    // No Ledger on a CI machine, so this exercises the presence probe. What
-    // matters is that it answers quickly rather than spending the budget:
-    // wallet-cli alone takes about a minute to reach the same conclusion.
+  it('answers inside a small budget whether or not a device is attached', async () => {
+    // Deliberately independent of machine state. An earlier version of this
+    // asserted the no-device path and passed only until someone plugged a
+    // Ledger in, which is a test that measures the desk rather than the code.
     const started = Date.now();
-    const r = await runGate('high', { budgetMs: 30_000 });
+    const r = await runGate('high', { budgetMs: 1_000 });
     expect(r.approved).toBe(false);
-    expect(Date.now() - started).toBeLessThan(10_000);
+    expect(Date.now() - started).toBeLessThan(8_000);
   });
 
   it('a small budget cannot be widened by GATE_TIMEOUT_MS', async () => {
@@ -67,7 +67,42 @@ describe('the wait is capped by the caller\'s remaining budget', () => {
     const started = Date.now();
     const r = await runGate('high', { budgetMs: 1_000 });
     expect(r.approved).toBe(false);
-    expect(Date.now() - started).toBeLessThan(10_000);
+    expect(Date.now() - started).toBeLessThan(8_000);
+  });
+});
+
+describe('what the device says about itself', () => {
+  const locked = JSON.stringify({
+    type: 'device-state',
+    state: { code: 'awaiting_approval', reason: 'unlock' },
+    message: 'Ledger is locked. Enter your PIN on the device.',
+  });
+  const waiting = JSON.stringify({
+    type: 'device-state',
+    state: { code: 'awaiting_approval' },
+    message: 'Confirm the address on your device.',
+  });
+
+  it('recognises a locked device', () => {
+    const p = readProgress(locked);
+    expect(p?.locked).toBe(true);
+    expect(p?.message).toContain('PIN');
+  });
+
+  it('recognises a device waiting for a press', () => {
+    expect(readProgress(waiting)?.locked).toBe(false);
+  });
+
+  it('ignores lines that are not progress', () => {
+    expect(readProgress('{"ok":true}')).toBeNull();
+    expect(readProgress('not json at all')).toBeNull();
+  });
+
+  it('reads an approval from either stream', () => {
+    // The bug this replaces: the parser was handed `stdout || stderr`, so once
+    // stdout carried the progress lines, which it always does, stderr was
+    // never examined. An approval arriving there would have been refused.
+    expect(parseWalletCli(`${locked}\n\n{"ok":true}`).ok).toBe(true);
   });
 });
 

@@ -40,6 +40,11 @@ export function delimit(value: string, nonce: string): string {
   return `<untrusted id="${nonce}">${neutralise(value)}</untrusted>`;
 }
 
+/** One trailing full stop, whether or not the reason already carried one. */
+function sentence(text: string): string {
+  return /[.!?]$/.test(text.trim()) ? text.trim() : `${text.trim()}.`;
+}
+
 function shortAddress(a: string): string {
   return `${a.slice(0, 6)}...${a.slice(-4)}`;
 }
@@ -76,7 +81,7 @@ export function renderVerdict(v: Verdict, opts: { full?: boolean } = {}): string
     out.push(
       v.gate.approved
         ? 'GATE: approved by a human on a Ledger device.'
-        : `GATE: REFUSED. ${v.gate.reason ?? 'not approved'}.`,
+        : `GATE: REFUSED. ${sentence(v.gate.reason ?? 'not approved')}`,
       v.gate.approved
         ? 'A person confirmed this on hardware. You may proceed.'
         : 'Nobody approved this on hardware. Do not sign against this address.',
