@@ -39,6 +39,38 @@ describe('gate policy', () => {
   });
 });
 
+describe('the wait is capped by the caller\'s remaining budget', () => {
+  // The regression this exists for: a fixed forty-second wait was added to a
+  // variable analysis, the sum exceeded the MCP client's sixty-second limit,
+  // and the agent got a transport timeout instead of a refusal. A timeout is
+  // not an answer.
+  const originalTimeout = process.env['GATE_TIMEOUT_MS'];
+  afterEach(() => {
+    if (originalTimeout === undefined) delete process.env['GATE_TIMEOUT_MS'];
+    else process.env['GATE_TIMEOUT_MS'] = originalTimeout;
+  });
+
+  it('refuses in well under the budget when no device is attached', async () => {
+    // No Ledger on a CI machine, so this exercises the presence probe. What
+    // matters is that it answers quickly rather than spending the budget:
+    // wallet-cli alone takes about a minute to reach the same conclusion.
+    const started = Date.now();
+    const r = await runGate('high', { budgetMs: 30_000 });
+    expect(r.approved).toBe(false);
+    expect(Date.now() - started).toBeLessThan(10_000);
+  });
+
+  it('a small budget cannot be widened by GATE_TIMEOUT_MS', async () => {
+    // budgetMs narrows and never widens. Someone setting a long timeout must
+    // not be able to push the call past the deadline it has to meet.
+    process.env['GATE_TIMEOUT_MS'] = '120000';
+    const started = Date.now();
+    const r = await runGate('high', { budgetMs: 1_000 });
+    expect(r.approved).toBe(false);
+    expect(Date.now() - started).toBeLessThan(10_000);
+  });
+});
+
 describe('reading wallet-cli output', () => {
   it('treats a missing device as a refusal, with the reason it gave', () => {
     // Verbatim from wallet-cli v2.1.0 with the Nano unplugged. It also exits 1,

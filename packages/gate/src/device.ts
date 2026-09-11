@@ -180,6 +180,16 @@ export interface DeviceOptions {
   account?: string;
   /** How long a human gets to reach the device and press. */
   timeoutMs?: number;
+  /**
+   * A ceiling the wait may not exceed, whatever it is otherwise configured to
+   * be. The engine passes what is left of the caller's request budget, so a
+   * slow analysis shortens the wait rather than overrunning the caller.
+   *
+   * Separate from timeoutMs on purpose: this narrows, never widens. Setting
+   * GATE_TIMEOUT_MS still works and still cannot push the call past its
+   * deadline.
+   */
+  budgetMs?: number;
 }
 
 /**
@@ -192,7 +202,8 @@ export interface DeviceOptions {
  */
 export async function confirmOnDevice(opts: DeviceOptions = {}): Promise<GateOutcome> {
   const account = opts.account ?? env('LEDGER_ACCOUNT_LABEL') ?? 'ethereum-1';
-  const timeoutMs = opts.timeoutMs ?? Number(env('GATE_TIMEOUT_MS') ?? DEFAULT_TIMEOUT_MS);
+  const configured = opts.timeoutMs ?? Number(env('GATE_TIMEOUT_MS') ?? DEFAULT_TIMEOUT_MS);
+  const timeoutMs = Math.min(configured, opts.budgetMs ?? Number.POSITIVE_INFINITY);
   const bin = resolveWalletCli();
   if (!bin) return DENIED('WALLET_CLI_PATH is set but does not exist');
 

@@ -46,6 +46,32 @@ export interface PreflightOptions {
  */
 export const MIN_COVERAGE = 0.6;
 
+/**
+ * The MCP SDK gives a tool call sixty seconds by default, and that is the real
+ * constraint on everything below.
+ *
+ * Analysis is bounded but not fixed: it depends on Etherscan, The Graph and a
+ * model, measured at seven to nine seconds together and capable of much worse.
+ * The gate then blocks on a person. Adding a fixed forty-second wait to a
+ * variable analysis is how we shipped a call that could exceed the caller's
+ * limit, and when it did the agent got a transport timeout rather than a
+ * refusal. A timeout is not an answer. A refusal is.
+ *
+ * So the gate is given whatever is left rather than a constant, and the
+ * response always arrives before the caller stops listening.
+ */
+const CLIENT_REQUEST_BUDGET_MS = 60_000;
+
+/** Rendering, persistence and transport, after the gate returns. */
+const RESPONSE_MARGIN_MS = 6_000;
+
+/**
+ * Below this there is no point asking a human. Nobody reaches a device and
+ * presses in four seconds, so the honest move is to refuse now and say the
+ * budget was already spent, rather than open a window that cannot be met.
+ */
+const MIN_USEFUL_GATE_MS = 5_000;
+
 /** Deterministic. Written from the signals that fired, never from model output. */
 function summarise(v: { severity: string; score: number; signals: Verdict['signals'] }): string {
   const fired = v.signals.filter((s) => s.fired);
@@ -78,6 +104,7 @@ export async function runPreflight(
     throw new Error(`not a contract address: ${address}`);
   }
   const normalised = address.toLowerCase();
+  const startedAt = Date.now();
 
   // Two independent sources, fetched together. The context is assembled once
   // and shared, so adding signals costs no extra network calls.
@@ -153,8 +180,27 @@ export async function runPreflight(
   ];
 
   // Blocks on a human. Runs after scoring because the severity is what decides
-  // whether a person is needed at all.
-  const gate = opts.gate ? await runGate(severity) : undefined;
+  // whether a person is needed at all, and it gets only the time the analysis
+  // did not already spend.
+  const remaining =
+    CLIENT_REQUEST_BUDGET_MS - (Date.now() - startedAt) - RESPONSE_MARGIN_MS;
+  const gate = opts.gate
+    ? remaining < MIN_USEFUL_GATE_MS
+      ? {
+          required: severity === 'high',
+          approved: severity !== 'high',
+          method: 'auto' as const,
+          ...(severity === 'high'
+            ? {
+                reason:
+                  `analysis used ${Math.round((Date.now() - startedAt) / 1000)}s of the ` +
+                  `60s request budget, leaving no room to wait for a device. Nobody ` +
+                  `approved this. Retry when the network is quicker`,
+              }
+            : {}),
+        }
+      : await runGate(severity, { budgetMs: remaining })
+    : undefined;
 
   const verdict: Verdict = {
     id: randomUUID().slice(0, 8),
