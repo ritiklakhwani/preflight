@@ -13,6 +13,7 @@ export {
   parseWalletCli,
   deviceAttached,
   readProgress,
+  humanise,
 } from './device.js';
 export type { GateOutcome, DeviceOptions, DeviceProgress } from './device.js';
 export { loadRingSecrets, decryptSecret, RING_KEYS } from './secrets.js';

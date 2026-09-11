@@ -224,7 +224,6 @@ export async function confirmOnDevice(opts: DeviceOptions = {}): Promise<GateOut
           'receive',
           '--account', account,
           '--verify',
-          '--device-timeout', String(timeoutMs),
           '--output', 'json',
         ],
         { stdio: ['ignore', 'pipe', 'pipe'] },
@@ -262,17 +261,34 @@ export async function confirmOnDevice(opts: DeviceOptions = {}): Promise<GateOut
       resolve(outcome);
     };
 
-    // wallet-cli's own timeout flag did not take effect in v2.1.0, so this is
-    // the one that actually bounds the wait.
-    const timer = setTimeout(
-      () =>
+
+    /**
+     * Out of time, but not yet out of answers.
+     *
+     * The first version resolved here and killed the child in the same breath,
+     * which threw away whatever wallet-cli was in the middle of writing. We
+     * watched it happen: the timer settled the promise as a refusal, and the
+     * close handler then found a complete result already sitting in stdout.
+     *
+     * That run was a refusal either way, so the outcome was right by luck. A
+     * press landing in the same instant would have been discarded, and a
+     * discarded approval is the failure this whole file exists to prevent.
+     *
+     * So expiry stops the waiting and nothing else. The child is asked to
+     * stop, its output is read one last time, and the close handler decides.
+     */
+    let expired = false;
+    const timer = setTimeout(() => {
+      expired = true;
+      child.kill('SIGTERM');
+      // Backstop: if the process will not close, settle without it rather than
+      // hang past the caller's deadline.
+      setTimeout(() => {
         finish(
-          DENIED(
-            explain(`no confirmation within ${Math.round(timeoutMs / 1000)}s`, lastState),
-          ),
-        ),
-      timeoutMs + 2_000,
-    );
+          DENIED(explain(`no confirmation within ${Math.round(timeoutMs / 1000)}s`, lastState)),
+        );
+      }, 1_500);
+    }, timeoutMs + 2_000);
 
     child.stdout.on('data', (c) => {
       stdout += String(c);
@@ -285,18 +301,53 @@ export async function confirmOnDevice(opts: DeviceOptions = {}): Promise<GateOut
 
     child.on('error', (err) => finish(DENIED(`could not run wallet-cli: ${err.message}`)));
 
-    child.on('close', () => {
+    child.on('close', (code, signal) => {
       // Both streams, not one or the other. The previous version passed
       // `stdout || stderr`, so once stdout carried anything at all, and it
       // always carries the progress lines, stderr was never read. A genuine
       // approval arriving there would have been refused, which is the same
       // class of bug as accepting a non-approval, pointing the other way.
       const result = parseWalletCli(`${stdout}\n${stderr}`);
+
+      // How it ended, which we were not recording. wallet-cli writes an
+      // {"ok":...} line and exits 6 when it gives up on its own, so output
+      // that stops at a progress line means the process died instead of
+      // answering. Without the exit code that case is indistinguishable from
+      // a parse failure, and we spent a test run unable to tell them apart.
+      if (env('PREFLIGHT_GATE_DEBUG')) {
+        process.stderr.write(
+          `[gate] exit=${code ?? 'null'} signal=${signal ?? 'none'}\n` +
+            `[gate] raw stdout:\n${stdout}\n[gate] raw stderr:\n${stderr}\n`,
+        );
+      }
+
+      // An approval found here counts even when the clock has already run out.
+      // It means the press happened; we were simply still reading.
       if (result.ok) {
         finish({ required: true, approved: true, method: 'device' });
-      } else {
-        finish(DENIED(explain(result.message, lastState)));
+        return;
       }
+
+      // When wallet-cli said what happened, that is the reason. Preferring the
+      // last progress line over it reported 'wallet-cli exited 1 without an
+      // answer' for a refusal that arrived as UserRefusedOnDevice, which is
+      // both wrong and the opposite of useful.
+      if (result.explicit) {
+        finish(DENIED(result.message));
+        return;
+      }
+
+      if (expired) {
+        finish(
+          DENIED(explain(`no confirmation within ${Math.round(timeoutMs / 1000)}s`, lastState)),
+        );
+        return;
+      }
+
+      const how = signal
+        ? `wallet-cli was killed by ${signal}`
+        : `wallet-cli exited ${code ?? 'unknown'} without an answer`;
+      finish(DENIED(explain(result.message, lastState, how)));
     });
   });
 }
@@ -316,6 +367,64 @@ export async function confirmOnDevice(opts: DeviceOptions = {}): Promise<GateOut
  * missing.
  */
 /**
+ * Ledger's SDK reports refusal as an identifier, not a sentence. Someone
+ * reading a refusal should not have to know that `UserRefusedOnDevice` is what
+ * pressing the left button looks like from here.
+ */
+const DEVICE_ERRORS: Record<string, string> = {
+  UserRefusedOnDevice: 'Rejected on the device. Nothing was approved.',
+  UserRefusedAddress: 'Address rejected on the device. Nothing was approved.',
+  LockedDeviceError: 'The Ledger is locked. Unlock it, then run this check again.',
+  TransportRaceCondition: 'The device was busy. Close other Ledger apps and try again.',
+};
+
+/**
+ * Families, matched on a keyword, because enumerating Ledger's error names by
+ * hand does not work.
+ *
+ * Two attempts at an exact table both missed. The real disconnect error is
+ * `DeviceDisconnectedBeforeSendingApdu`, not `DisconnectedDevice`, and a
+ * refusal surfaced as `UserRefusedOnDevice` rather than anything about the
+ * address. Each miss leaked a protocol identifier into a message someone reads
+ * while standing over a Ledger wondering what went wrong.
+ *
+ * Matching the meaningful word instead covers the variants without needing to
+ * know them in advance, and the fallback below keeps anything unmatched
+ * readable rather than shouting an identifier.
+ */
+const ERROR_FAMILIES: [RegExp, string][] = [
+  [/refus|reject|deni/i, 'Rejected on the device. Nothing was approved.'],
+  [/disconnect|unplug/i, 'The device was disconnected before it answered. Reconnect it and try again.'],
+  [/lock/i, 'The Ledger is locked. Unlock it, then run this check again.'],
+  [/busy|race|already open/i, 'The device was busy. Close other Ledger apps and try again.'],
+  [/timeout|timed out/i, 'The device did not answer in time.'],
+  [/app|application/i, 'Open the Ethereum app on the device, then try again.'],
+];
+
+/** `DeviceDisconnectedBeforeSendingApdu` reads as a sentence, not a symbol. */
+function fromIdentifier(name: string): string {
+  const words = name.replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase().trim();
+  return words ? `${words.charAt(0).toUpperCase()}${words.slice(1)}.` : name;
+}
+
+export function humanise(message: string): string {
+  const raw = message.trim();
+  if (DEVICE_ERRORS[raw]) return DEVICE_ERRORS[raw]!;
+
+  // Only a bare identifier is ever rewritten. Matching families against real
+  // prose is worse than the problem it solves: "No Ledger device found. Unlock
+  // the device and try again" contains the word unlock, so a keyword match
+  // replaced an accurate message about a missing device with a wrong one about
+  // a locked device. wallet-cli writes good sentences. Leave them alone.
+  if (!/^[A-Za-z][A-Za-z0-9]*$/.test(raw)) return raw;
+
+  for (const [pattern, text] of ERROR_FAMILIES) {
+    if (pattern.test(raw)) return text;
+  }
+  return fromIdentifier(raw);
+}
+
+/**
  * The reason a person actually needs.
  *
  * Prefer whatever the device last said about itself over our own generic
@@ -323,12 +432,13 @@ export async function confirmOnDevice(opts: DeviceOptions = {}): Promise<GateOut
  * ours are written for a log. "Ledger is locked. Enter your PIN on the device"
  * tells someone what to do next; "no confirmation within 40s" does not.
  */
-function explain(fallback: string, state: DeviceProgress | null): string {
-  if (!state) return fallback;
-  if (state.locked) {
-    return `${state.message} Unlock it, then run this check again.`;
-  }
-  return `${state.message} (${fallback})`;
+function explain(fallback: string, state: DeviceProgress | null, how?: string): string {
+  if (state?.locked) return `${state.message} Unlock it, then run this check again.`;
+  // The device's own words, plus how the process ended. Never the raw JSON:
+  // dumping 200 characters of truncated protocol at someone standing over a
+  // Ledger tells them nothing they can act on.
+  if (state) return how ? `${state.message} ${how}.` : `${state.message} (${fallback})`;
+  return how ? `${fallback}. ${how}.` : fallback;
 }
 
 export interface DeviceProgress {
@@ -374,7 +484,12 @@ export function readProgress(line: string): DeviceProgress | null {
  * real press. That is the safe direction to be wrong in, and the raw output
  * comes back in the reason so the shape can be corrected in one pass.
  */
-export function parseWalletCli(output: string): { ok: boolean; message: string } {
+export function parseWalletCli(output: string): {
+  ok: boolean;
+  message: string;
+  /** True when wallet-cli stated an outcome, rather than us inferring one. */
+  explicit: boolean;
+} {
   const lines = output
     .split('\n')
     .map((l) => l.trim())
@@ -384,11 +499,39 @@ export function parseWalletCli(output: string): { ok: boolean; message: string }
     try {
       const parsed = JSON.parse(lines[i]!) as {
         ok?: boolean;
+        status?: string;
+        verified?: boolean;
+        source?: string;
         error?: { message?: string };
       };
-      if (parsed.ok === true) return { ok: true, message: 'confirmed on device' };
+      if (parsed.ok === true) {
+        return { ok: true, message: 'confirmed on device', explicit: true };
+      }
       if (parsed.ok === false) {
-        return { ok: false, message: parsed.error?.message ?? 'declined on device' };
+        return {
+          ok: false,
+          message: humanise(parsed.error?.message ?? 'declined on device'),
+          explicit: true,
+        };
+      }
+      // The shape a real press actually produces, measured on wallet-cli
+      // v2.1.0 against a Nano S Plus:
+      //
+      //   {"status":"success","command":"receive","verified":true,
+      //    "source":"device","address":"0x8E2D...","timestamp":"..."}
+      //
+      // `status` alone proves nothing: it is the generic "the command ran"
+      // envelope, and `session view` returns it without ever reaching the
+      // device. Requiring ok:true instead was the previous correction, and it
+      // went too far, because receive --verify never emits ok:true. It refused
+      // genuine approvals for an entire evening of testing.
+      //
+      // The proof of a human press is the pair below. `verified` says the
+      // address was confirmed rather than merely derived, and `source` says a
+      // device did the confirming rather than a cache or a session. Both, on a
+      // success envelope, and nothing less.
+      if (parsed.status === 'success' && parsed.verified === true && parsed.source === 'device') {
+        return { ok: true, message: 'verified on device', explicit: true };
       }
     } catch {
       continue;
@@ -403,5 +546,6 @@ export function parseWalletCli(output: string): { ok: boolean; message: string }
     message: tail
       ? `no approval in wallet-cli output: ${tail}`
       : 'wallet-cli produced no readable result',
+    explicit: false,
   };
 }

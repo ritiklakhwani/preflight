@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { GATE_SEVERITY, gateEnabled, runGate } from '../src/index.js';
-import { parseWalletCli, readProgress } from '../src/device.js';
+import { humanise, parseWalletCli, readProgress } from '../src/device.js';
 
 const original = process.env['PREFLIGHT_GATE'];
 afterEach(() => {
@@ -113,8 +113,9 @@ describe('reading wallet-cli output', () => {
     const real =
       '{"type":"pre-verify-address","command":"receive","address":"0x8E2D0425c3aa61d811d546b605ABD745E054Ef49"}\n' +
       '{"ok":false,"error":{"command":"receive","code":"unknown","message":"No Ledger device found. Unlock the device and try again."}}';
-    expect(parseWalletCli(real)).toEqual({
+    expect(parseWalletCli(real)).toMatchObject({
       ok: false,
+      explicit: true,
       message: 'No Ledger device found. Unlock the device and try again.',
     });
   });
@@ -146,8 +147,94 @@ describe('what counts as an approval', () => {
     expect(parseWalletCli(envelope).ok).toBe(false);
   });
 
-  it('accepts only an explicit ok:true', () => {
+  it('accepts an explicit ok:true', () => {
     expect(parseWalletCli('{"ok":true,"data":{}}').ok).toBe(true);
+  });
+
+  it('accepts the shape a real press actually produces', () => {
+    // Measured on wallet-cli v2.1.0 with a Nano S Plus. `receive --verify`
+    // never emits ok:true, so demanding it refused every genuine approval for
+    // an entire evening of hardware testing.
+    const pressed = JSON.stringify({
+      status: 'success',
+      command: 'receive',
+      verified: true,
+      source: 'device',
+      address: '0x8E2D0425c3aa61d811d546b605ABD745E054Ef49',
+    });
+    expect(parseWalletCli(pressed).ok).toBe(true);
+  });
+
+  it('does not accept verification that did not come from the device', () => {
+    // `source` is what separates a physical press from a cached or derived
+    // answer. Without it a success envelope proves only that a command ran.
+    const cached = JSON.stringify({
+      status: 'success', command: 'receive', verified: true, source: 'cache',
+    });
+    expect(parseWalletCli(cached).ok).toBe(false);
+  });
+
+  it('does not accept a device answer that was never verified', () => {
+    const derived = JSON.stringify({
+      status: 'success', command: 'receive', verified: false, source: 'device',
+    });
+    expect(parseWalletCli(derived).ok).toBe(false);
+  });
+
+  it('does not accept a success envelope missing both proofs', () => {
+    const bare = JSON.stringify({ status: 'success', command: 'receive' });
+    expect(parseWalletCli(bare).ok).toBe(false);
+  });
+
+  it('reports a rejection as a rejection, not as a missing answer', () => {
+    // 2.4 on the hardware plan. wallet-cli said UserRefusedOnDevice and we
+    // reported 'exited 1 without an answer', which is both wrong and the
+    // opposite of useful to the person who just pressed the button.
+    const refused = '{"ok":false,"error":{"command":"receive","code":"unknown","message":"UserRefusedOnDevice"}}';
+    const r = parseWalletCli(refused);
+    expect(r.ok).toBe(false);
+    expect(r.explicit).toBe(true);
+    expect(r.message).toContain('Rejected on the device');
+    expect(r.message).not.toContain('UserRefusedOnDevice');
+  });
+
+  it('never shows a protocol identifier to whoever is holding the device', () => {
+    // Every one of these came off real hardware tonight. Two exact-name tables
+    // missed them, which is why the matching is by family now.
+    const real = [
+      'UserRefusedOnDevice',
+      'DeviceDisconnectedBeforeSendingApdu',
+      'LockedDeviceError',
+      'TransportRaceCondition',
+    ];
+    for (const name of real) {
+      const out = humanise(name);
+      expect(out).not.toBe(name);
+      expect(out).toMatch(/^[A-Z].*\.$/);
+    }
+  });
+
+  it('rewrites an unknown identifier rather than shouting it', () => {
+    expect(humanise('SomeFutureLedgerError')).toBe('Some future ledger error.');
+  });
+
+  it('leaves a message that is already a sentence alone', () => {
+    const sentence = 'No Ledger device found. Unlock the device and try again.';
+    expect(humanise(sentence)).toBe(sentence);
+  });
+
+  it('marks an inferred outcome as not explicit, so it can be treated as a guess', () => {
+    expect(parseWalletCli('{"type":"device-state"}').explicit).toBe(false);
+  });
+
+  it('prefers a later decline over an earlier success on the same stream', () => {
+    const stream = [
+      JSON.stringify({ status: 'success', command: 'receive', verified: true, source: 'device' }),
+      JSON.stringify({ ok: false, error: { message: 'rejected on device' } }),
+    ].join('\n');
+    const r = parseWalletCli(stream);
+    expect(r.ok).toBe(false);
+    expect(r.message).toMatch(/rejected/i);
   });
 
   it('carries the raw output back when it refuses, so a wrong assumption is diagnosable', () => {

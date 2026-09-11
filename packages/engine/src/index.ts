@@ -62,8 +62,13 @@ export const MIN_COVERAGE = 0.6;
  */
 const CLIENT_REQUEST_BUDGET_MS = 60_000;
 
-/** Rendering, persistence and transport, after the gate returns. */
-const RESPONSE_MARGIN_MS = 6_000;
+/**
+ * Everything that happens after the wait itself: the gate's two-second grace
+ * period, the second and a half it spends draining the device's last output,
+ * then rendering, persistence and transport. Measured rather than guessed,
+ * and raised from six seconds when the drain was added.
+ */
+const RESPONSE_MARGIN_MS = 9_000;
 
 /**
  * Below this there is no point asking a human. Nobody reaches a device and
@@ -91,7 +96,9 @@ function summarise(v: { severity: string; score: number; signals: Verdict['signa
   }
 
   if (fired.length === 0) return `${head}. No risk signals fired${tail}.`;
-  const names = fired.map((s) => s.name).join(', ');
+  // Heaviest first, matching the order the evidence is rendered in. The two
+  // disagreeing made the summary read as a different argument to the body.
+  const names = [...fired].sort((a, b) => b.weight - a.weight).map((s) => s.name).join(', ');
   return `${head}. ${fired.length} of ${v.signals.length} signals fired: ${names}${tail}.`;
 }
 
