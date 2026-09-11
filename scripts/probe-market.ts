@@ -5,6 +5,7 @@
  *
  *   node --env-file=.env --import tsx scripts/probe-market.ts <address> [chainId]
  */
+import './boot.js';
 import { queryMarket } from '../packages/signals/src/graph.js';
 
 const address = process.argv[2];

@@ -12,6 +12,7 @@
  *
  *   node --env-file=.env --import tsx scripts/benchmark.ts
  */
+import './boot.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';

@@ -40,6 +40,41 @@ export const RING_KEYS: { env: string; ringKey: string; file: string }[] = [
   { env: 'OPENAI_API_KEY', ringKey: 'preflight-openai', file: 'secrets/openai.enc' },
 ];
 
+/**
+ * Put the Key Ring passphrase in the environment if it is not already there.
+ *
+ * wallet-cli needs it for every ring operation and refuses to prompt without a
+ * TTY. `bin/preflight-mcp` already injects it for the MCP server, but that
+ * covered exactly one entry point, and the benchmark, the probes and the
+ * analyse CLI all went without. They did not fail loudly either: the decrypt
+ * failed, the plaintext was no longer in `.env` to fall back to, and every
+ * network signal quietly reported that it could not run. A benchmark of twenty
+ * addresses scored every one of them clean.
+ *
+ * Resolving it here means any entry point that loads credentials gets the
+ * passphrase, rather than each one remembering to arrange it.
+ */
+async function ensureWalletPass(): Promise<void> {
+  if (process.env['WALLET_PASS']?.trim()) return;
+
+  const lookup: [string, string[]] | null =
+    process.platform === 'darwin'
+      ? ['security', ['find-generic-password', '-a', 'default', '-s', 'ledger-wallet-cli', '-w']]
+      : process.platform === 'linux'
+        ? ['secret-tool', ['lookup', 'service', 'ledger-wallet-cli', 'account', 'default']]
+        : null;
+  if (!lookup) return;
+
+  try {
+    const { stdout } = await run(lookup[0], lookup[1], { maxBuffer: 8 * 1024 });
+    const pass = stdout.trim();
+    if (pass) process.env['WALLET_PASS'] = pass;
+  } catch {
+    // No keychain entry is not an error here. The decrypt will fail with a
+    // message that says so, which is more useful than one raised from here.
+  }
+}
+
 export async function decryptSecret(ringKey: string, file: string): Promise<string> {
   const bin = resolveWalletCli();
   if (!bin) throw new Error('wallet-cli not found');
@@ -72,6 +107,7 @@ export interface RingLoadResult {
  */
 export async function loadRingSecrets(root: string): Promise<RingLoadResult> {
   const result: RingLoadResult = { loaded: [], skipped: [], errors: [] };
+  await ensureWalletPass();
 
   for (const { env, ringKey, file } of RING_KEYS) {
     const path = `${root}/${file}`;

@@ -9,7 +9,7 @@
     "test": "vitest run",
     "db:up": "docker compose up -d --wait",
     "db:init": "docker compose exec -T db psql -U postgres -d preflight < packages/core/sql/schema.sql",
-    "analyse": "node --env-file=.env --import tsx packages/analysis/src/cli.ts",
+    "analyse": "node --env-file=.env --import tsx scripts/analyse.ts",
     "mcp": "node --env-file=.env --import tsx packages/mcp/src/index.ts"
   },
   "devDependencies": {

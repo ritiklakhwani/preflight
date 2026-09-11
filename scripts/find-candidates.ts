@@ -14,6 +14,7 @@
  *
  *   node --env-file=.env --import tsx scripts/find-candidates.ts [chainId]
  */
+import './boot.js';
 import { gql, subgraphFor } from '../packages/signals/src/graph.js';
 
 const chainId = Number(process.argv[2] ?? 1);

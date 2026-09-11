@@ -4,6 +4,8 @@
  *
  *   node --env-file=.env --import tsx scripts/probe-subgraph.ts <id> [<id> ...]
  */
+import './boot.js';
+
 const KEY = process.env.GRAPH_API_KEY;
 if (!KEY) { console.error('GRAPH_API_KEY missing'); process.exit(1); }
 
