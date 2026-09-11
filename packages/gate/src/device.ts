@@ -26,6 +26,10 @@
  * `--device-timeout` appears to be ignored. A call passing 6000 waited the full
  * default of 60 seconds before failing. So the timeout is enforced here by
  * killing the process, and the flag is still passed in case it starts working.
+ *
+ * Neither command fails fast when no device is attached: both scan for about a
+ * minute first. That is why deviceAttached() reads the USB tree directly before
+ * anything blocks on wallet-cli.
  */
 import { spawn } from 'node:child_process';
 import { existsSync, readdirSync } from 'node:fs';
@@ -88,18 +92,88 @@ export function resolveWalletCli(): string | null {
 }
 
 /**
- * How long a person gets to reach the device and press.
+ * Ledger's USB vendor id is 0x2c97. `ioreg` prints vendor ids in decimal, so
+ * both spellings are matched along with the vendor name string itself.
+ */
+const LEDGER_USB = /ledger|0x2c97|idVendor.*\b11415\b/i;
+
+/** The probe is a speed optimisation. If it cannot answer quickly, stop asking. */
+const PROBE_TIMEOUT_MS = 3_000;
+
+/**
+ * Is a Ledger attached right now?
  *
- * Deliberately under a minute. The MCP SDK times a request out at 60 seconds by
- * default, so a gate that waits the full minute loses the race with its own
- * caller: the agent gives up before the answer arrives, and pressing the button
- * accomplishes nothing. Measured, not guessed. This leaves roughly thirteen
- * seconds of headroom once the kill timer's grace period is counted.
+ * Asked before blocking on wallet-cli, because wallet-cli does not fail fast
+ * when no device is present. Measured on 2026-09-11: `receive --verify` scans
+ * for 61 seconds before giving up, and `genuine-check` for 62.
+ *
+ * That is unaffordable. The whole preflight_check call has to finish inside the
+ * MCP client's 60 second request timeout, and the analysis ahead of this
+ * already spends around twelve seconds. Waiting out a dead USB scan left under
+ * a second of margin, so the refusal an agent needs could arrive after the
+ * agent had stopped listening. Reading the USB tree instead takes 47ms.
+ *
+ * Returns null when the question could not be answered, and callers treat null
+ * as "go ask wallet-cli". Failing open is the deliberate direction: a probe
+ * that cannot run must never be able to refuse a device that is really there.
+ * Set PREFLIGHT_SKIP_USB_PROBE to disable it outright.
+ */
+export async function deviceAttached(): Promise<boolean | null> {
+  if (env('PREFLIGHT_SKIP_USB_PROBE')) return null;
+
+  const probe: [string, string[]] | null =
+    process.platform === 'darwin'
+      ? ['ioreg', ['-p', 'IOUSB', '-l']]
+      : process.platform === 'linux'
+        ? ['lsusb', []]
+        : null;
+  if (!probe) return null;
+
+  return new Promise<boolean | null>((resolve) => {
+    let out = '';
+    let child;
+    try {
+      child = spawn(probe[0], probe[1], { stdio: ['ignore', 'pipe', 'ignore'] });
+    } catch {
+      resolve(null);
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      child.kill('SIGKILL');
+      resolve(null);
+    }, PROBE_TIMEOUT_MS);
+
+    child.stdout.on('data', (c) => (out += String(c)));
+    child.on('error', () => {
+      clearTimeout(timer);
+      resolve(null);
+    });
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      // A non-zero exit means the probe itself failed, which is not evidence
+      // about the device.
+      resolve(code === 0 ? LEDGER_USB.test(out) : null);
+    });
+  });
+}
+
+/**
+ * How long a person gets to press, once we know a device is actually there.
+ *
+ * The MCP SDK times a request out at 60 seconds by default, and the analysis
+ * ahead of this spends around twelve, so the whole confirmation has to fit in
+ * the rest. Forty leaves eight seconds of margin after the kill timer's grace
+ * period, which is ample for a person already holding the device.
+ *
+ * This is only ever reached when someone is present and slow. The absent-device
+ * case no longer spends it: deviceAttached() answers that in milliseconds and
+ * refuses immediately, which is what freed the budget to be generous here.
  *
  * wallet-cli's own --device-timeout appears not to work in v2.1.0, so this is
  * enforced by killing the process.
  */
-const DEFAULT_TIMEOUT_MS = 45_000;
+const DEFAULT_TIMEOUT_MS = 40_000;
 
 export interface DeviceOptions {
   /** Session label from `wallet-cli session view`. */
@@ -121,6 +195,14 @@ export async function confirmOnDevice(opts: DeviceOptions = {}): Promise<GateOut
   const timeoutMs = opts.timeoutMs ?? Number(env('GATE_TIMEOUT_MS') ?? DEFAULT_TIMEOUT_MS);
   const bin = resolveWalletCli();
   if (!bin) return DENIED('WALLET_CLI_PATH is set but does not exist');
+
+  // Cheap question first. wallet-cli spends a minute discovering the same
+  // answer, and we do not have a minute.
+  if ((await deviceAttached()) === false) {
+    return DENIED(
+      'no Ledger detected over USB. Connect the device, unlock it, and run this check again',
+    );
+  }
 
   return new Promise<GateOutcome>((resolve) => {
     let child;

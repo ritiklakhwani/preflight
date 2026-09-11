@@ -7,7 +7,7 @@
 import type { Verdict } from '@preflight/core';
 import { confirmOnDevice, type DeviceOptions, type GateOutcome } from './device.js';
 
-export { confirmOnDevice, resolveWalletCli, parseWalletCli } from './device.js';
+export { confirmOnDevice, resolveWalletCli, parseWalletCli, deviceAttached } from './device.js';
 export type { GateOutcome, DeviceOptions } from './device.js';
 export { loadRingSecrets, decryptSecret, RING_KEYS } from './secrets.js';
 export type { RingLoadResult } from './secrets.js';
