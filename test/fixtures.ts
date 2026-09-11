@@ -54,7 +54,7 @@ export function context(over: Partial<SignalContext> = {}): SignalContext {
     analysis: analysis(),
     market: market(),
     deployer: { status: 'ok', firstSeen: 1_600_000_000, deployments: 1, sampled: 12, truncated: false, lastDeployedAt: 1_600_000_000 },
-    holders: { status: 'ok', sampled: 100, uniqueAddresses: 60 },
+    holders: { status: 'ok', sampled: 100, uniqueAddresses: 60, spanSeconds: 800_000 },
     ...over,
   };
 }

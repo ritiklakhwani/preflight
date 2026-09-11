@@ -272,7 +272,17 @@ export async function fetchDeployerProfile(
  * figure gets manufactured without anyone ever buying the token.
  */
 export type HolderResult =
-  | { status: 'ok'; sampled: number; uniqueAddresses: number }
+  | {
+      status: 'ok';
+      sampled: number;
+      uniqueAddresses: number;
+      /**
+       * Wall-clock seconds between the oldest and newest transfer in the
+       * sample. A fixed count of transfers means very different things on
+       * chains with different block times, and this is what tells them apart.
+       */
+      spanSeconds: number;
+    }
   | { status: 'error'; error: string };
 
 const HOLDER_SAMPLE = 100;
@@ -282,7 +292,9 @@ export async function fetchHolderDiversity(
   chainId: number,
 ): Promise<HolderResult> {
   try {
-    const txs = await call<Array<{ from: string; to: string }>>({
+    // timeStamp comes back on this response already. Reading it costs nothing
+    // and is what makes the sample interpretable across chains.
+    const txs = await call<Array<{ from: string; to: string; timeStamp?: string }>>({
       chainid: String(chainId),
       module: 'account',
       action: 'tokentx',
@@ -293,12 +305,20 @@ export async function fetchHolderDiversity(
     });
 
     const addresses = new Set<string>();
+    const times: number[] = [];
     for (const t of txs) {
       if (t.from) addresses.add(t.from.toLowerCase());
       if (t.to) addresses.add(t.to.toLowerCase());
+      const ts = Number(t.timeStamp);
+      if (Number.isFinite(ts) && ts > 0) times.push(ts);
     }
 
-    return { status: 'ok', sampled: txs.length, uniqueAddresses: addresses.size };
+    return {
+      status: 'ok',
+      sampled: txs.length,
+      uniqueAddresses: addresses.size,
+      spanSeconds: times.length > 1 ? Math.max(...times) - Math.min(...times) : 0,
+    };
   } catch (err) {
     return { status: 'error', error: err instanceof Error ? err.message : String(err) };
   }

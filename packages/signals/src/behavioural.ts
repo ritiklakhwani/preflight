@@ -369,6 +369,40 @@ export const thinLiquidity: Signal = {
  */
 const MIN_UNIQUE_ADDRESSES = 20;
 
+/**
+ * Below this many seconds, a hundred transfers is not a sample of who holds the
+ * token. It is a snapshot of one busy moment.
+ *
+ * Found by running USDC on Polygon, which scored HIGH 66 while the same token
+ * on Ethereum scored LOW 32. The threshold above was calibrated entirely on
+ * Ethereum, where a hundred transfers of a real token span hours. Polygon
+ * produces blocks roughly thirty times faster, so the same hundred transfers
+ * span seconds and are dominated by a handful of routers and MEV bots. A
+ * legitimate token looked exactly like a closed circle.
+ *
+ * Throughput this high is positive evidence of an active market, which is the
+ * direct contradiction of what this signal claims, so the honest move is to
+ * report the sample as unrepresentative rather than to fire on it.
+ *
+ * The residual gap, stated rather than hidden: a wash-trading bot cycling a
+ * hundred transfers between a few addresses inside an hour is excused by this
+ * guard. On a chain we index, `liquidity-reality`, `thin-liquidity` and
+ * `pool-age` all still see that token. On a chain we do not index, it is a
+ * miss, and closing it needs the total holder count rather than a sample.
+ */
+const ACTIVE_SAMPLE_SPAN_SECONDS = 3_600;
+
+/** Sample sizes below this are too small for the span to mean anything. */
+const SPAN_MIN_SAMPLE = 50;
+
+function describeSpan(seconds: number): string {
+  if (seconds <= 0) return 'all within one block';
+  if (seconds < 120) return `${seconds}s`;
+  if (seconds < 7_200) return `${Math.round(seconds / 60)}min`;
+  if (seconds < 172_800) return `${(seconds / 3_600).toFixed(1)}h`;
+  return `${(seconds / 86_400).toFixed(1)} days`;
+}
+
 export const holderConcentration: Signal = {
   name: 'holder-concentration',
   weight: 0.5,
@@ -385,7 +419,7 @@ export const holderConcentration: Signal = {
       return { fired: false, evidence: [], error: `holder history: ${ctx.holders.error}` };
     }
 
-    const { sampled, uniqueAddresses } = ctx.holders;
+    const { sampled, uniqueAddresses, spanSeconds } = ctx.holders;
     if (sampled === 0) {
       // No ERC-20 transfers at all. On a verified token that means nobody
       // holds it; on an unverified contract it may simply not be a token.
@@ -400,9 +434,28 @@ export const holderConcentration: Signal = {
     const evidence: Evidence[] = [
       {
         label: 'distribution',
-        value: `${uniqueAddresses} distinct addresses across the last ${sampled} transfers`,
+        value:
+          `${uniqueAddresses} distinct addresses across the last ${sampled} transfers, ` +
+          `spanning ${describeSpan(spanSeconds)}`,
       },
     ];
+
+    // A fast sample is a statement about throughput, not about distribution.
+    if (
+      uniqueAddresses < MIN_UNIQUE_ADDRESSES &&
+      sampled >= SPAN_MIN_SAMPLE &&
+      spanSeconds > 0 &&
+      spanSeconds < ACTIVE_SAMPLE_SPAN_SECONDS
+    ) {
+      evidence.push({
+        label: 'reading',
+        value:
+          `${sampled} transfers in ${describeSpan(spanSeconds)} is heavy throughput, so this ` +
+          'sample shows the busiest addresses rather than the holder base. Not enough to judge ' +
+          'distribution either way',
+      });
+      return { fired: false, evidence };
+    }
 
     if (uniqueAddresses < MIN_UNIQUE_ADDRESSES) {
       evidence.push({

@@ -92,7 +92,7 @@ describe('pool-age', () => {
 });
 
 describe('liquidity-reality', () => {
-  const thinlyHeld = { status: 'ok' as const, sampled: 13, uniqueAddresses: 6 };
+  const thinlyHeld = { status: 'ok' as const, sampled: 13, uniqueAddresses: 6, spanSeconds: 900_000 };
 
   it('fires on large value that nothing has traded against, held by almost nobody', () => {
     // The demo asset. $1.1T locked, four transactions ever, six addresses
@@ -117,7 +117,7 @@ describe('liquidity-reality', () => {
     // to the case above; opposite meaning. Without this it scored HIGH 90.
     const r = await liquidityReality.run(
       context({
-        holders: { status: 'ok', sampled: 100, uniqueAddresses: 45 },
+        holders: { status: 'ok', sampled: 100, uniqueAddresses: 45, spanSeconds: 900_000 },
         market: market({
           pools: [pool({ totalValueLockedUSD: 10_239_570, txCount: 12, volumeUSD: 0 })],
         }),
@@ -185,8 +185,10 @@ describe('thin-liquidity', () => {
 });
 
 describe('holder-concentration', () => {
-  const held = (uniqueAddresses: number, sampled = 100) =>
-    context({ holders: { status: 'ok', sampled, uniqueAddresses } });
+  // spanSeconds defaults to eleven days, the Ethereum pace the threshold was
+  // calibrated against.
+  const held = (uniqueAddresses: number, sampled = 100, spanSeconds = 950_000) =>
+    context({ holders: { status: 'ok', sampled, uniqueAddresses, spanSeconds } });
 
   it('fires on transfers circulating among a closed set', async () => {
     // MEX: a hundred transfers among eight addresses, which is how a $104m
@@ -214,6 +216,27 @@ describe('holder-concentration', () => {
     const r = await holderConcentration.run(context({ holders: null }));
     expect(r.fired).toBe(false);
     expect(r.error).toBeUndefined();
+  });
+
+  it('does not fire when the sample spans seconds rather than days', async () => {
+    // USDC on Polygon. Fifteen addresses across a hundred transfers, which on
+    // Ethereum would be damning and here is just one busy minute on a chain
+    // producing blocks thirty times faster. It scored HIGH 66 before this.
+    const r = await holderConcentration.run(held(15, 100, 40));
+    expect(r.fired).toBe(false);
+    expect(r.evidence.some((e) => /throughput/.test(e.value))).toBe(true);
+  });
+
+  it('still fires on a closed set when those transfers took months', async () => {
+    // The same fifteen addresses, spread over a hundred days. Nothing about
+    // the throughput excuses this one.
+    expect((await holderConcentration.run(held(15, 100, 8_640_000))).fired).toBe(true);
+  });
+
+  it('does not let a small sample hide behind a short span', async () => {
+    // Thirteen transfers in a minute is not evidence of heavy throughput, so
+    // the guard must not apply.
+    expect((await holderConcentration.run(held(6, 13, 60))).fired).toBe(true);
   });
 });
 
