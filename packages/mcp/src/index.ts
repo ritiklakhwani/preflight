@@ -15,7 +15,32 @@ import { loadRingSecrets } from '@preflight/gate';
 import { z } from 'zod';
 import { renderList, renderVerdict } from './render.js';
 
-const log = (msg: string) => process.stderr.write(`[mcp] ${msg}\n`);
+const log = (msg: string) => {
+  try {
+    process.stderr.write(`[mcp] ${msg}\n`);
+  } catch {
+    // The client is gone. Losing a diagnostic is not worth a crash.
+  }
+};
+
+/**
+ * The client can vanish mid-response: its request timed out, or the editor was
+ * closed. Writing to the closed pipe raises EPIPE, which Node treats as an
+ * unhandled 'error' event on the stream and turns into a crash dump on the
+ * user's terminal.
+ *
+ * That dump is worse than useless. It appears after the client has already
+ * reported the real problem, it names an internal stream write rather than
+ * anything actionable, and it reads like the server is broken when the server
+ * is the one thing that still worked. There is nobody left to answer and
+ * nothing to recover, so leave quietly.
+ */
+for (const stream of [process.stdout, process.stderr]) {
+  stream.on('error', (err: NodeJS.ErrnoException) => {
+    if (err.code === 'EPIPE') process.exit(0);
+    log(`stream error: ${err.message}`);
+  });
+}
 
 const server = new McpServer({ name: 'preflight', version: '0.1.0' });
 
