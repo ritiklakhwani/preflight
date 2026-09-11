@@ -38,6 +38,19 @@ function env(key: string): string | undefined {
   return v && v.trim() ? v.trim() : undefined;
 }
 
+/**
+ * The model is advisory and must never be able to delay a verdict.
+ *
+ * Both SDKs default to a ten-minute timeout and two automatic retries, so a
+ * single stalled request becomes minutes of silence. That is how a
+ * preflight_check that normally takes eight seconds took sixty and died on the
+ * MCP client's timeout. Severity never depended on this call; now the clock
+ * does not either. A timeout here degrades to a verdict with no prose summary,
+ * which analyse() already handles.
+ */
+const LLM_TIMEOUT_MS = 15_000;
+const LLM_RETRIES = 0;
+
 const ANTHROPIC_MODEL = env('ANTHROPIC_MODEL') ?? 'claude-sonnet-5';
 const OPENAI_MODEL = env('OPENAI_MODEL') ?? 'gpt-4o';
 
@@ -102,7 +115,11 @@ export function pickProvider(): Provider {
 
 async function viaAnthropic(system: string, prompt: string): Promise<string> {
   const { default: Anthropic } = await import('@anthropic-ai/sdk');
-  const client = new Anthropic({ apiKey: env('ANTHROPIC_API_KEY')! });
+  const client = new Anthropic({
+    apiKey: env('ANTHROPIC_API_KEY')!,
+    timeout: LLM_TIMEOUT_MS,
+    maxRetries: LLM_RETRIES,
+  });
   const msg = await client.messages.create({
     model: ANTHROPIC_MODEL,
     max_tokens: 1024,
@@ -121,7 +138,11 @@ async function viaAnthropic(system: string, prompt: string): Promise<string> {
 
 async function viaOpenAI(system: string, prompt: string): Promise<string> {
   const { default: OpenAI } = await import('openai');
-  const client = new OpenAI({ apiKey: env('OPENAI_API_KEY')! });
+  const client = new OpenAI({
+    apiKey: env('OPENAI_API_KEY')!,
+    timeout: LLM_TIMEOUT_MS,
+    maxRetries: LLM_RETRIES,
+  });
   const res = await client.chat.completions.create({
     model: OPENAI_MODEL,
     max_tokens: 1024,

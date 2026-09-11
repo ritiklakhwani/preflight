@@ -26,6 +26,21 @@ const V2 = 'https://api.etherscan.io/v2/api';
  * worse trade. This spaces every call in the process so that cannot happen.
  */
 const MIN_CALL_INTERVAL_MS = 360;
+
+/**
+ * No request may hang for longer than this.
+ *
+ * There was no timeout here at all, and it cost us a live run. fetch() without
+ * a signal waits indefinitely, so a slow Etherscan response blocked
+ * preflight_check past the MCP client's 60 second limit. The agent got a
+ * transport timeout instead of a verdict, which is the one answer shape this
+ * project is built to avoid: not a finding, not an honest error, just nothing.
+ *
+ * Eight seconds is generous against a measured 0.3 to 1.9 seconds. A call that
+ * exceeds it becomes a signal reporting it could not run, which the coverage
+ * floor then accounts for.
+ */
+const CALL_TIMEOUT_MS = 8_000;
 let lastCallAt = 0;
 let queue: Promise<unknown> = Promise.resolve();
 
@@ -70,7 +85,7 @@ async function call<T>(params: Record<string, string>): Promise<T> {
   }
 
   const url = `${V2}?${new URLSearchParams({ ...params, apikey: key })}`;
-  const res = await throttle(() => fetch(url));
+  const res = await throttle(() => fetch(url, { signal: AbortSignal.timeout(CALL_TIMEOUT_MS) }));
   if (!res.ok) throw new Error(`Etherscan HTTP ${res.status}`);
 
   const body = (await res.json()) as { status: string; message: string; result: T };
@@ -139,7 +154,7 @@ export async function fetchContractCreation(
   })}`;
 
   try {
-    const res = await throttle(() => fetch(url));
+    const res = await throttle(() => fetch(url, { signal: AbortSignal.timeout(CALL_TIMEOUT_MS) }));
     if (!res.ok) return { status: 'error', error: `Etherscan HTTP ${res.status}` };
 
     const body = (await res.json()) as {
