@@ -23,6 +23,22 @@ export interface SignalResult {
   evidence: Evidence[];
   /** A signal that throws records the error and does not fail the verdict. */
   error?: string;
+  /**
+   * False when the check could not be performed at all, as opposed to being
+   * performed and finding nothing.
+   *
+   * The distinction is not cosmetic. On an unverified contract the three
+   * source-dependent checks cannot look, and they were being listed as
+   * "found nothing" alongside checks that genuinely had. That reads as a
+   * clean bill of health on exactly the category of address least deserving
+   * of one.
+   *
+   * These stay out of the error path on purpose: an unverified contract is a
+   * finding about the contract, not an outage on our side, and
+   * `unverified-source` already fires and carries the weight. This flag only
+   * stops the others from being reported as reassurance.
+   */
+  assessed?: boolean;
 }
 
 /** A string field from an untrusted source that matched one or more injection rules. */

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { delimit, renderVerdict } from '../src/render.js';
+import { delimit, renderList, renderVerdict } from '../src/render.js';
 import { verdict } from '../../../test/fixtures.js';
 
 describe('delimit', () => {
@@ -106,6 +106,58 @@ describe('renderVerdict', () => {
     );
     expect(out).toContain('COULD NOT RUN');
     expect(out).toContain('gateway down');
+  });
+
+  it('never shows a severity when too little of the check ran', () => {
+    // Found by breaking the Key Ring passphrase. Eight of eleven signals could
+    // not run, so nothing fired, so severity was clean and score was 0. All
+    // arithmetically true, and the first line read CLEAN 0/100 for an address
+    // nobody had successfully checked.
+    const out = renderVerdict(
+      verdict({ severity: 'clean', score: 0, coverage: { ran: 3, total: 11 } }),
+    );
+    expect(out.split('\n')[0]).toContain('INCONCLUSIVE');
+    expect(out.split('\n')[0]).not.toContain('CLEAN');
+  });
+
+  it('does not list an unchecked address as clean in the history', () => {
+    const out = renderList([verdict({ severity: 'clean', score: 0, coverage: { ran: 3, total: 11 } })]);
+    expect(out).toContain('unknown');
+    expect(out).not.toMatch(/clean/);
+  });
+
+  it('still shows a real severity when the check did complete', () => {
+    const out = renderVerdict(verdict({ severity: 'low', score: 20, coverage: { ran: 11, total: 11 } }));
+    expect(out.split('\n')[0]).toContain('LOW 20/100');
+  });
+
+  it('does not report a check that could not look as a check that found nothing', () => {
+    // DOTT, an unverified contract. Three source-dependent checks cannot read
+    // anything, and they were listed under "found nothing" beside checks that
+    // genuinely had. That is reassurance on the least deserving address.
+    const out = renderVerdict(
+      verdict({
+        signals: [
+          { name: 'blind-one', fired: false, weight: 0.2, evidence: [], assessed: false },
+          { name: 'looked', fired: false, weight: 0.3, evidence: [] },
+        ],
+      }),
+    );
+    expect(out).toContain('NOT ASSESSABLE');
+    expect(out.indexOf('blind-one')).toBeLessThan(out.indexOf('CLEAR'));
+    expect(out).toContain('not the same as finding nothing');
+  });
+
+  it('says so at the top when a check ran against incomplete data', () => {
+    // USDC under a rate limit: 11 of 11 checks completed, and one of them
+    // analysed a proxy shell because the implementation could not be read.
+    const v = verdict();
+    const out = renderVerdict({
+      ...v,
+      analysis: { ...v.analysis, notes: ['Implementation 0xabc could not be read: rate limit.'] },
+    });
+    expect(out).toContain('LIMITS');
+    expect(out.indexOf('LIMITS')).toBeLessThan(out.indexOf('CONTRACT'));
   });
 
   it('uses a fresh unpredictable nonce per render', () => {

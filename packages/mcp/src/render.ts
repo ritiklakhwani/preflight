@@ -20,7 +20,7 @@
  * the text becomes model context.
  */
 import { randomBytes } from 'node:crypto';
-import type { Verdict } from '@preflight/core';
+import { inconclusive, type Verdict } from '@preflight/core';
 
 /** C0 and C7 control characters, including the newlines that would fake a new section. */
 const CONTROL = /[\x00-\x1f\x7f]/g;
@@ -62,8 +62,15 @@ export function renderVerdict(v: Verdict, opts: { full?: boolean } = {}): string
 
   // The answer first, in four lines, before any evidence. A reader should not
   // have to scroll to learn what the verdict was.
+  // A severity computed from three checks out of eleven is not a severity.
+  // Breaking the credential store produced CLEAN 0/100 on the first line of a
+  // response whose own body said INCONCLUSIVE, which is the exact reading this
+  // project exists to prevent, surviving at the presentation layer.
+  const unknown = inconclusive(v.coverage);
   out.push(
-    `PREFLIGHT  ${v.severity.toUpperCase()} ${v.score}/100`,
+    unknown
+      ? 'PREFLIGHT  INCONCLUSIVE  (not enough checks ran to judge this address)'
+      : `PREFLIGHT  ${v.severity.toUpperCase()} ${v.score}/100`,
     `address    ${v.address}  (chain ${v.chainId})`,
     `checks     ${v.coverage.ran} of ${v.coverage.total} completed`,
   );
@@ -102,6 +109,17 @@ export function renderVerdict(v: Verdict, opts: { full?: boolean } = {}): string
     );
   }
 
+  // A check can complete against incomplete data, and the count alone cannot
+  // say so. USDC under an Etherscan rate limit reported 11 of 11 completed and
+  // scored LOW 20 instead of LOW 32, because the proxy implementation could not
+  // be read and the transfer checks analysed an empty shell. The note existed;
+  // it sat below the fold under CONTRACT while the header said everything ran.
+  if (v.analysis.notes?.length) {
+    out.push('LIMITS  checks ran, but not on everything they needed:');
+    for (const n of v.analysis.notes) out.push(`  ${n}`);
+    out.push('');
+  }
+
   // Findings before non-findings, heaviest first. Eleven signals in
   // declaration order buries the three that matter among the eight that do
   // not, and the reader has to reconstruct the argument themselves.
@@ -120,7 +138,11 @@ export function renderVerdict(v: Verdict, opts: { full?: boolean } = {}): string
 
   const fired = v.signals.filter((s) => !s.error && s.fired).sort((a, b) => b.weight - a.weight);
   const failed = v.signals.filter((s) => s.error);
-  const clear = v.signals.filter((s) => !s.error && !s.fired);
+  // Could not look, as opposed to looked and found nothing. Listing these as
+  // clear reported reassurance on an unverified contract, which is the last
+  // kind of address that should get any.
+  const blind = v.signals.filter((s) => !s.error && !s.fired && s.assessed === false);
+  const clear = v.signals.filter((s) => !s.error && !s.fired && s.assessed !== false);
 
   if (fired.length) {
     out.push('WHY');
@@ -134,6 +156,15 @@ export function renderVerdict(v: Verdict, opts: { full?: boolean } = {}): string
     out.push('COULD NOT RUN');
     for (const sig of failed) detail(sig, 'ERROR');
     out.push('');
+  }
+
+  if (blind.length) {
+    out.push(
+      `NOT ASSESSABLE  ${blind.length} check(s) could not be performed:`,
+      `  ${blind.map((s) => s.name).join(', ')}`,
+      '  No source to read. This is not the same as finding nothing.',
+      '',
+    );
   }
 
   if (clear.length) {
@@ -154,9 +185,7 @@ export function renderVerdict(v: Verdict, opts: { full?: boolean } = {}): string
   if (a.compilerVersion) out.push(`  compiler  ${a.compilerVersion}`);
   if (a.implementationAddress) out.push(`  impl      ${a.implementationAddress}`);
   if (a.error) out.push(`  error     ${a.error}`);
-  // Non-fatal gaps in coverage. The caller is told what was not checked rather
-  // than left to read a shallow verdict as a thorough one.
-  for (const n of a.notes ?? []) out.push(`  note      ${n}`);
+  // Reported under LIMITS above, where it is visible.
   out.push('');
 
   if (v.taint.length > 0) {
@@ -206,9 +235,13 @@ export function renderList(verdicts: Verdict[]): string {
   if (verdicts.length === 0) return 'No verdicts recorded yet.';
   return [
     'RECENT VERDICTS',
-    ...verdicts.map(
-      (v) =>
-        `  ${v.id}  ${shortAddress(v.address)}  ${v.severity.padEnd(6)} ${String(v.score).padStart(3)}/100  ${v.createdAt}`,
-    ),
+    ...verdicts.map((v) => {
+      // Same reason as the header. A row reading `clean 0/100` for an address
+      // that was never successfully checked is worse than no row at all.
+      const verdict = inconclusive(v.coverage)
+        ? `${'unknown'.padEnd(7)}  ${'--'.padStart(3)}/100`
+        : `${v.severity.padEnd(7)}  ${String(v.score).padStart(3)}/100`;
+      return `  ${v.id}  ${shortAddress(v.address)}  ${verdict}  ${v.createdAt}`;
+    }),
   ].join('\n');
 }

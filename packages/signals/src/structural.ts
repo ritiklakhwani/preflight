@@ -93,7 +93,7 @@ export const privilegedControl: Signal = {
     'A privileged role can change the contract or move funds: an upgradeable proxy, or owner-gated mint, pause, withdraw or fee functions.',
   async run(ctx) {
     const { isProxy, ownerOnlyFunctions, verified, implementationAddress } = ctx.analysis;
-    if (!verified) return { fired: false, evidence: notAssessable(ctx) };
+    if (!verified) return { fired: false, evidence: notAssessable(ctx), assessed: false };
 
     const evidence: Evidence[] = [];
     if (isProxy) {
@@ -134,7 +134,7 @@ export const transferRestrictions: Signal = {
   describe:
     'Transfers can be blocked for specific addresses or halted entirely: a blacklist, a trading gate, or a bot guard.',
   async run(ctx) {
-    if (!ctx.analysis.verified) return { fired: false, evidence: notAssessable(ctx) };
+    if (!ctx.analysis.verified) return { fired: false, evidence: notAssessable(ctx), assessed: false };
     if (!ctx.analysis.hasTransferRestrictions) {
       return { fired: false, evidence: [{ label: 'transfers', value: 'no address-level gate found' }] };
     }
@@ -156,7 +156,7 @@ export const selfDestruct: Signal = {
   weight: 0.45,
   describe: 'The contract can destroy itself, stranding anything held or approved against it.',
   async run(ctx) {
-    if (!ctx.analysis.verified) return { fired: false, evidence: notAssessable(ctx) };
+    if (!ctx.analysis.verified) return { fired: false, evidence: notAssessable(ctx), assessed: false };
     if (!ctx.analysis.hasSelfDestruct) {
       return { fired: false, evidence: [{ label: 'selfdestruct', value: 'not present' }] };
     }

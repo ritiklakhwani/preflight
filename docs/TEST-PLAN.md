@@ -21,7 +21,7 @@ unfinished, **Low** cosmetic.
 | 0.3 | `security find-generic-password -a default -s ledger-wallet-cli -w > /dev/null && echo FOUND` | Prints `FOUND`. Never drop the redirect: without it the command prints your Key Ring passphrase to the terminal, where it lands in scrollback and in anything you paste |
 | 0.4 | `wallet-cli --version` | `2.1.0` or later |
 | 0.5 | `pnpm check` | Exit 0, no output |
-| 0.6 | `pnpm test` | **142 passed**, 8 files |
+| 0.6 | `pnpm test` | **167 passed**, 8 files |
 
 If 0.3 fails, create the entry:
 
@@ -82,6 +82,9 @@ node --env-file=.env --import tsx scripts/benchmark.ts
 ```
 
 **Expected:** `21 cases   0 scored above their label (false positives)   0 below (missed risk)`.
+
+Transient rate limits may drop a case to 10 of 11 coverage. That is fine. A row marked
+`OVER` is not.
 
 **Failure looks like:** any row marked `OVER` or `under`. An `OVER` on a blue chip is the
 expensive one. **Critical.**
@@ -217,7 +220,7 @@ PREFLIGHT_GATE=off node --env-file=.env --import tsx scripts/mcp-smoke.ts 0x1111
 ### 3.3 Injection payloads are contained, not executed
 
 ```bash
-pnpm test -- corpus
+pnpm test corpus
 ```
 
 **Expected:** 37 payloads across 6 sites and 10 attack classes, **33 detected, 4 known misses**,
@@ -238,7 +241,7 @@ contract author. **Critical if absent**: the delimiter is the whole prompt-injec
 Covered deterministically by the corpus. To see it by hand:
 
 ```bash
-pnpm test -- rules
+pnpm test rules
 ```
 
 **Expected:** 22 passing, including bidi overrides, zero-width characters and mixed-script
@@ -269,7 +272,7 @@ because Etherscan's free tier does not serve Base creation records. **Medium.**
 Bands are `clean` 0-14, `low` 15-34, `medium` 35-59, `high` 60-100.
 
 ```bash
-pnpm test -- score
+pnpm test score
 ```
 
 **Expected:** 8 passing, including the boundary values. A single signal of weight 0.35 produces
@@ -350,7 +353,7 @@ Run this immediately before recording. Nothing here takes thought.
 ```bash
 cd preflight
 pnpm check                                    # exit 0
-pnpm test                                     # 142 passed
+pnpm test                                     # 167 passed
 docker compose ps                             # db healthy
 security find-generic-password -a default -s ledger-wallet-cli -w > /dev/null && echo PASS_OK
 wallet-cli --version                          # 2.1.0
@@ -363,7 +366,7 @@ Then, with the Ledger plugged in and unlocked:
 node --env-file=.env --import tsx scripts/mcp-smoke.ts 0x6B175474E89094C44Da98b954EedeAC495271d0F 1
 ```
 
-- Credentials decrypt, storage postgres, **LOW 20, coverage 11/11**, about 12 seconds.
+- Credentials decrypt, storage postgres, **LOW 20, coverage 11/11**, about 8 seconds.
 
 Then unplug the Ledger and run:
 
@@ -371,7 +374,7 @@ Then unplug the Ledger and run:
 node --env-file=.env --import tsx scripts/mcp-smoke.ts 0x160de4468586B6B2F8a92FEB0c260fc6cFC743B1 1
 ```
 
-- **HIGH 94, refused in about 13 seconds**, agent told not to sign.
+- **HIGH 94, refused in about 9 seconds**, agent told not to sign.
 
 Plug it back in, run the same command, press the button.
 
