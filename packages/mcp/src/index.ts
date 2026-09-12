@@ -193,6 +193,13 @@ server.registerTool(
 // still works and the log says which credentials came from where.
 const ring = await loadRingSecrets(process.cwd());
 if (ring.loaded.length) log(`key ring: decrypted ${ring.loaded.join(', ')}`);
+// Expected for anyone without our trustchain, which is everyone but us.
+if (ring.fellBack.length) {
+  log(
+    `key ring: no trustchain for ${ring.fellBack.join(', ')}, using the values from .env ` +
+      `instead. This is normal unless you provisioned the Key Ring yourself.`,
+  );
+}
 for (const e of ring.errors) log(`key ring: ${e}`);
 
 store = await createStore();

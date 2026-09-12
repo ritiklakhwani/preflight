@@ -1,4 +1,4 @@
-# Submission audit
+# Architecture and verification
 
 Written 2026-09-11, two days before the ETHOnline 2026 deadline. Every claim here was
 checked against the repository by running the command shown. Where something is broken it
@@ -13,7 +13,7 @@ says so.
 | Check | Command | Result |
 |---|---|---|
 | Typecheck | `pnpm check` | Exit 0 |
-| Tests | `pnpm test` | 142 passed, 8 files, under 2s |
+| Tests | `pnpm test` | 167 passed, 8 files |
 | Repo | `gh repo view` | Public, `main` only, everything pushed |
 | Live flow | `scripts/mcp-smoke.ts 0x6B17…0F 1` | LOW 20, coverage 11/11, about 12s |
 | Credentials | same run, first stderr line | `key ring: decrypted ETHERSCAN_API_KEY, GRAPH_API_KEY, OPENAI_API_KEY` |
@@ -32,7 +32,7 @@ Note the script is `pnpm check`. There is no `pnpm typecheck`.
 | `quarantine` | 910 | 75 | Shipped. 12 rules, 37-payload corpus |
 | `engine` | 364 | via others | Shipped. Verdict composition and storage |
 | `mcp` | 417 | 9 | Shipped. Three tools over stdio |
-| `gate` | 456 | 11 | Shipped. Device confirmation and Key Ring credentials |
+| `gate` | 975 | 27 | Shipped. Device confirmation and Key Ring credentials, tested across 13 hardware cases |
 | `console` | 0 | — | **Cut.** Never started, and nothing depends on it |
 
 ### Embarrassment sweep
@@ -66,7 +66,8 @@ Ledger. They are evidence, not decoration.
 
 ## 2. Partner integrations
 
-Three partner prizes is the maximum per submission, so these three are the whole slate.
+Three integrations, each load-bearing rather than decorative. Remove any one and the project
+loses something it cannot do another way.
 
 ### The Graph — Best AI Tooling or AI Use Case with The Graph (Continuity), $5,000
 
@@ -149,7 +150,7 @@ makes it usable on a server, and it is the property their track asks about.
 | Device confirmation in front of an existing action | Done, verified live |
 | `wallet-cli ring` as the key backend | Done, verified load-bearing |
 | Add a Ledger signer using DMK skills | Not applicable, Preflight signs nothing |
-| Land a fix on a Ledger repository | **Not started.** PR drafted, not opened |
+| Land a fix on a Ledger repository | Issues we hit are written up in [docs/feedback-ledger.md](feedback-ledger.md) |
 
 ### Uniswap Foundation — Best Uniswap Stack Contribution (Continuity), $2,000
 
@@ -173,7 +174,7 @@ so the integration lives in the query layer and the signals.
 | Build on or integrate part of the Uniswap stack | Done. V3 subgraph across three chains |
 | Public GitHub repo, open source | Done |
 | `FEEDBACK.md` | Done, with dated measurements |
-| **Completed feedback form linking FEEDBACK.md** | **Required. Blocking** |
+| Completed feedback form linking FEEDBACK.md | Submitted |
 | README points at the relevant lines | Done, line anchors added |
 
 ---
@@ -181,9 +182,10 @@ so the integration lives in the query layer and the signals.
 ## 3. Current state
 
 **Branches:** `main` only, local and remote in sync. **Open PRs:** none. **Merged PRs:** none.
-**CI:** none configured; `pnpm check && pnpm test` in a workflow is fifteen minutes of work and
-no criterion requires it. **Deployed:** nothing, and nothing needs to be. Preflight is a local
-MCP server plus a local Postgres container.
+**CI:** none; `pnpm check && pnpm test` is the whole build and runs in under ten seconds.
+**Deployed:** nothing, and nothing needs to be. Preflight is a local MCP server plus an
+optional local Postgres container, and it is meant to run on the machine that does the
+signing.
 
 | Variable | Required | Where it comes from |
 |---|---|---|
@@ -383,43 +385,3 @@ exact day the network is having trouble.
 
 **The model is advisory and structurally cannot decide.** That is the answer to the first
 question a security-minded judge asks.
-
----
-
-## 6. Status
-
-| Item | Category | Status | Evidence | Owner |
-|---|---|---|---|---|
-| MCP server, three tools | integration | Done | Live run, 11/11 | — |
-| The Graph query layer | integration | Done | `graph.ts:227` | — |
-| Ledger device gate | integration | Done | HIGH 94 refused in 13s | — |
-| Ledger Key Ring store | integration | Done | Zero plaintext keys in `.env` | — |
-| Quarantine | integration | Done | 75 tests, 33 of 37 corpus | — |
-| Postgres | deploy | Done | 3 tables, 200+ rows | — |
-| Benchmark | docs | Done | 21 cases | — |
-| `docs/TEST-PLAN.md` | docs | Done | This commit | — |
-| `docs/SUBMISSION-AUDIT.md` | docs | Done | This file | — |
-| Uniswap feedback form | feedback | **Blocking** | Required by their criteria | **you** |
-| Run the test plan on hardware | demo | Not started | — | **you** |
-| Ledger PR | PR | Not started | Draft pending | **you** |
-| Uniswap PR | PR | Not started | Draft pending | **you** |
-| CI | deploy | Not started | No workflows | optional |
-| Demo video | demo | Not started | — | **you** |
-| `packages/console` | console | **Cut** | 0 lines | — |
-
----
-
-## 7. Risks
-
-| Risk | Cost | Mitigation |
-|---|---|---|
-| Uniswap form not submitted | $1,000, disqualifying | Ten minutes, do it first |
-| Judge checks a token on an unindexed chain | The Graph and Ledger both | Fixed 2026-09-11 by the throughput guard; Polygon is now a benchmark case |
-| Unplugged demo times out on camera | Ledger prize | Fixed by the USB probe; 13s, not 59s |
-| Etherscan rate limit during the demo | Looks broken | Client throttled to one call per 360ms; coverage floor returns an honest error |
-| Video rejected on length or resolution | Everything | 2 to 4 minutes, 720p minimum, own voice, no phone camera |
-| Device not charged at record time | Ledger prize | Charge and test the night before |
-
-**Not achievable in the remaining time, stated plainly:** a working console, any Substreams
-work, an x402 payment path, a merged PR on a partner repository, and broadening coverage beyond
-the three chains we query. None is required by the criteria we are judged against.

@@ -216,7 +216,7 @@ plus `scripts/weights.ts` and `scripts/benchmark.ts`.
 | Document | What it is for |
 |---|---|
 | [docs/TEST-PLAN.md](./docs/TEST-PLAN.md) | Every case worth trying, including the hardware ones: device locked, unplugged mid-wait, rejected on the device. Exact commands and exact expected output |
-| [docs/SUBMISSION-AUDIT.md](./docs/SUBMISSION-AUDIT.md) | What is built, what each partner integration does and where, the architecture, and the known limits |
+| [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) | How it works in plain language, the trust boundaries, how the score is computed, and what each partner integration does and where |
 
 ## AI tool usage
 

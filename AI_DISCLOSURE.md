@@ -26,6 +26,7 @@ every TypeScript file in this repository.
 | `packages/signals`, all eleven signals | Model-drafted, including the threshold values |
 | `packages/quarantine`, rules and the 37-payload corpus | Model-drafted |
 | `packages/engine`, `packages/mcp` | Model-drafted |
+| `packages/gate` | Model-drafted. Its shape was corrected repeatedly by the author's hardware testing, which is described below |
 | Developer tooling in `scripts/` | Model-drafted |
 | Documentation, including this file | Model-drafted, corrected by the author where wrong |
 
@@ -94,6 +95,48 @@ The author had attended the session live and corrected this. The claim was wrong
 a physical Ledger Nano S Plus. Establishing that `ring encrypt` and `ring decrypt` work with
 the device unplugged, after a single provisioning tap, is what made the credential-store
 half of the Ledger integration viable at all.
+
+**Rejecting the proposed gate timeout, 2026-09-11.** The model found that a `high` verdict
+could exceed the MCP client's sixty-second limit and proposed cutting the device wait from
+forty-five seconds to twenty-five. The author refused, on the grounds that forty-five seconds
+is a reasonable window for someone to reach a device and unlock it, and asked what the
+reduction was actually buying. That objection was correct and the proposal was poor. Being
+made to justify it produced the measurement that mattered: `wallet-cli` does not fail fast
+when no device is attached, it scans for about a minute, and that scan was what consumed the
+budget. Reading the USB tree instead answers in 47 milliseconds. The human window grew rather
+than shrank, and the race disappeared. The design in `packages/gate/src/device.ts` exists
+because the author would not accept the first answer.
+
+**Requiring an audit where every claim was executed, 2026-09-11.** The author asked for a
+survey of the project in which nothing was reported as working unless the command had been
+run and its output shown. Doing that exposed the most embarrassing defect of the build: moving
+the API keys onto the Key Ring had left the MCP server as the only entry point that decrypted
+them, so the benchmark had been running twenty addresses with no credentials, scoring every
+one of them clean, and printing `0 false positives`. It was measuring nothing and reporting
+success. Nothing in the test suite could have caught it.
+
+**Testing the device paths on real hardware, 2026-09-11 and 2026-09-12.** The author worked
+through thirteen physical cases: device absent, locked, unlocked and approved, rejected,
+unplugged mid-wait, reconnected, left untouched until timeout. Nine defects surfaced, every
+one of them in code with a passing test suite. The most serious was a parser that refused
+every genuine approval, because `receive --verify` reports success as `status: "success"` with
+`verified` and `source` fields and never emits the `ok: true` the model had decided to require.
+No amount of reading would have found that. Someone had to press the button.
+
+**Demanding the output be readable, 2026-09-11.** The author's objection was that a run
+printed the verdict twice and they had to scroll to find what happened. That is the entire
+reason the response now leads with the severity, orders findings by weight, and collapses
+checks that found nothing. Following it up exposed three further defects of the same shape,
+where partial knowledge was being presented with full confidence: checks that could not run
+listed as having found nothing, a rate-limited proxy read reported as a complete analysis, and
+an outage displayed as `CLEAN 0/100`.
+
+**Testing as a judge rather than as the author, 2026-09-12.** Asked to verify the project,
+the author specified that it be done from scratch, the way someone encountering the repository
+would, rather than in the working directory. That reframing found that the published repository
+did not build at all: two files were uncommitted while a file depending on them had been
+pushed. Every check until then had been run against a local tree that had been correct for
+days. The distinction between what works here and what is published was the author's.
 
 ## Where AI was not used
 

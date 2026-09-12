@@ -92,8 +92,23 @@ export async function decryptSecret(ringKey: string, file: string): Promise<stri
 }
 
 export interface RingLoadResult {
+  /** Decrypted from ciphertext in this repository. */
   loaded: string[];
+  /** No ciphertext present for these. */
   skipped: string[];
+  /**
+   * Ciphertext present and undecryptable, but the environment already had a
+   * value, so nothing is lost.
+   *
+   * This is the normal case for anyone who is not us. The `.enc` files are
+   * committed and useless without our trustchain, so a judge cloning the repo
+   * and adding their own keys to `.env` hits this on every credential. The
+   * first version reported it as three failures with the full wallet-cli
+   * command line in each, which reads like a broken install seconds after
+   * someone has cloned the project.
+   */
+  fellBack: string[];
+  /** Undecryptable, with no value in the environment to fall back to. */
   errors: string[];
 }
 
@@ -106,7 +121,7 @@ export interface RingLoadResult {
  * degrades to the previous behaviour rather than taking the server down.
  */
 export async function loadRingSecrets(root: string): Promise<RingLoadResult> {
-  const result: RingLoadResult = { loaded: [], skipped: [], errors: [] };
+  const result: RingLoadResult = { loaded: [], skipped: [], fellBack: [], errors: [] };
   await ensureWalletPass();
 
   for (const { env, ringKey, file } of RING_KEYS) {
@@ -119,7 +134,19 @@ export async function loadRingSecrets(root: string): Promise<RingLoadResult> {
       process.env[env] = await decryptSecret(ringKey, path);
       result.loaded.push(env);
     } catch (err) {
-      result.errors.push(`${env}: ${err instanceof Error ? err.message : String(err)}`);
+      // A failed decrypt is only a problem if it leaves us without the value.
+      if (process.env[env]?.trim()) {
+        result.fellBack.push(env);
+        continue;
+      }
+      const why = err instanceof Error ? err.message : String(err);
+      // wallet-cli echoes the whole command line it ran. Keep the reason.
+      const reason = /wrong password/i.test(why)
+        ? 'wrong Key Ring passphrase'
+        : /not found|ENOENT/i.test(why)
+          ? 'wallet-cli not found'
+          : why.split('\n').find((l) => /\bmessage\b|error/i.test(l))?.trim() ?? why.slice(0, 120);
+      result.errors.push(`${env}: ${reason}, and no value in the environment to fall back to`);
     }
   }
   return result;
