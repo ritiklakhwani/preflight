@@ -51,3 +51,27 @@ export function score(results: SignalResult[]): { score: number; severity: Sever
 function clamp(w: number): number {
   return Math.min(Math.max(w, 0), 1);
 }
+
+/**
+ * Below this fraction of the signal set running, a verdict is a statement
+ * about our connectivity rather than about the address.
+ */
+export const MIN_COVERAGE = 0.6;
+
+/**
+ * Was enough of the check performed for the answer to mean anything?
+ *
+ * This lives here, next to the scoring, because it is a property of a verdict
+ * and not of any one way of displaying it. Breaking the Key Ring passphrase
+ * produced a verdict whose severity was `clean` and whose score was 0, which
+ * is arithmetically correct: no signal fired, because eight of eleven could
+ * not run. The tool returned an error and the summary said INCONCLUSIVE, and
+ * the header still read CLEAN 0/100, and the recent list still showed a clean
+ * row for an address nobody had checked.
+ *
+ * An outage must not be readable as a clean bill of health anywhere, including
+ * in the two places a person's eye actually lands.
+ */
+export function inconclusive(coverage: { ran: number; total: number }): boolean {
+  return coverage.total > 0 && coverage.ran / coverage.total < MIN_COVERAGE;
+}

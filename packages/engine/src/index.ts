@@ -8,7 +8,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { analyse, fetchDeployerProfile, fetchHolderDiversity } from '@preflight/analysis';
-import { score, type Verdict } from '@preflight/core';
+import { MIN_COVERAGE, score, type Verdict } from '@preflight/core';
 import {
   ALL_SIGNALS,
   queryMarket,
@@ -40,11 +40,7 @@ export interface PreflightOptions {
   gate?: boolean;
 }
 
-/**
- * Below this fraction of the signal set running, the verdict is a statement
- * about our connectivity rather than about the address, and it says so.
- */
-export const MIN_COVERAGE = 0.6;
+export { MIN_COVERAGE, inconclusive } from '@preflight/core';
 
 /**
  * The MCP SDK gives a tool call sixty seconds by default, and that is the real
