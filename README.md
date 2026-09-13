@@ -39,11 +39,10 @@ an agent reading the contract finds nothing wrong and signs.
 
 ![An agent asks whether a token is safe to approve. Preflight rates it HIGH 94 of 100, because the 1.1 trillion dollars of reported liquidity has been touched by four transactions in 1,452 days.](docs/images/verdict.png)
 
-Two things in that answer were not scripted. The agent says the contract's name and description
-"come from the contract's author, so treat them as unconfirmed", which is the untrusted-string
-handling working on a reader that has never seen this repository. And it reads a hardware
-approval correctly: "that doesn't mean it's safe, it only means someone accepted the risks
-without resolving them."
+Notice what the agent does with the contract's own name. It reports that the name and the model's
+description "come from the contract's author, so treat them as unconfirmed". And it reads the
+hardware approval for what it is: "that doesn't mean it's safe, it only means someone accepted
+the risks without resolving them."
 
 Source code tells you what a contract may do. Indexed pool history tells you what it has done,
 and only one of those predicts a rug.
