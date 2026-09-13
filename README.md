@@ -37,19 +37,13 @@ Here is a real token on Ethereum mainnet. It reports **1.1 trillion dollars of l
 transactions have touched it in four years. The source is verified and the name is friendly, so
 an agent reading the contract finds nothing wrong and signs.
 
-```
-PREFLIGHT  HIGH 94/100
-address    0x160de4468586b6b2f8a92feb0c260fc6cfc743b1  (chain 1)
-checks     11 of 11 completed
-gate       REFUSED. no Ledger detected over USB.
+![An agent asks whether a token is safe to approve. Preflight rates it HIGH 94 of 100, because the 1.1 trillion dollars of reported liquidity has been touched by four transactions in 1,452 days.](docs/images/verdict.png)
 
-WHY
-  [FIRED] liquidity-reality  (weight 0.85)
-          dormant capital: $1,110,167,010,696 locked across only 4 transaction(s)
-          in 1451 days, $277,541,752,674 per transaction
-          reading: value this large that nothing has traded against is reported
-          liquidity, not usable liquidity
-```
+Two things in that answer were not scripted. The agent says the contract's name and description
+"come from the contract's author, so treat them as unconfirmed", which is the untrusted-string
+handling working on a reader that has never seen this repository. And it reads a hardware
+approval correctly: "that doesn't mean it's safe, it only means someone accepted the risks
+without resolving them."
 
 Source code tells you what a contract may do. Indexed pool history tells you what it has done,
 and only one of those predicts a rug.
