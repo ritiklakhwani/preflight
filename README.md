@@ -56,6 +56,36 @@ and only one of those predicts a rug.
 
 ---
 
+## How it works
+
+```
+  AGENT  (Claude Code, Cursor)  holds signing capability
+    |
+    |  preflight_check { address, chainId }
+    v
+  packages/mcp          three tools over stdio
+    |
+    v
+  packages/engine       one definition of a verdict
+    |
+    +---> packages/analysis   Etherscan V2: source, ABI, proxy, deployer, transfers
+    +---> packages/signals    The Graph: Uniswap V3 pools on 3 chains
+    |                         11 weighted signals
+    +---> packages/core       score() - deterministic, no model
+    |
+    +---> packages/quarantine untrusted strings sealed and nonce-delimited
+    |
+    +---> packages/gate       HIGH -> Ledger device, physical press required
+    |
+    v
+  verdict -> Postgres, and text back to the agent
+```
+
+Three trust boundaries, what crosses each and how it fails, plus the scoring formula and every
+weight, are in [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md).
+
+---
+
 ## What existed before ETHOnline 2026
 
 **Base project:** Inspector AI, built at ETHGlobal Singapore, September 2024.
@@ -160,6 +190,42 @@ and `deployer-history` cannot run and report so. The verdict is computed from
 the seven checks that did complete, and the response says which ones did not.
 When fewer than 60% of checks complete, Preflight returns an error instead of a
 verdict rather than let an outage read as a clean bill of health.
+
+### Where The Graph integration lives
+
+The Graph is where Preflight learns what a contract has **done**, as opposed to what its source
+says it will do. A node can tell you a token's balance. It cannot tell you that the only pool
+holding it was created six hours ago and has never been traded. That needs indexed history.
+
+**Seven of the eleven signals depend on it.** Remove The Graph and the project cannot answer its
+own question.
+
+We read the official Uniswap V3 subgraphs through the decentralised gateway, authenticated with
+a Subgraph Studio key. Uniswap ships identical subgraph code to each chain, so one query string
+covers all three and only the deployment id changes.
+
+| Chain | Subgraph deployment id |
+|---|---|
+| Ethereum, 1 | `5zvR82QoaXYFyDEKLZ9t6v9adgnptxYpKpSbxtgVENFV` |
+| Arbitrum One, 42161 | `FbCGRftH4a3yZugY7TnbYgPJVEv2LvMT6oF1fxPe9aJM` |
+| Base, 8453 | `HMuAwufqZ1YCRmzL2SfHTVkzZovC9VL2UAKhjvRqKiR1` |
+
+| What | Where |
+|---|---|
+| Chain to deployment mapping | [`graph.ts:30-34`](packages/signals/src/graph.ts#L30-L34) |
+| The gateway call, with the Studio key | [`graph.ts:219-244`](packages/signals/src/graph.ts#L219-L244) |
+| Both directional pool queries | [`graph.ts:161-173`](packages/signals/src/graph.ts#L161-L173) |
+| The signals that read it | [`behavioural.ts`](packages/signals/src/behavioural.ts) |
+
+Endpoint shape: `https://gateway.thegraph.com/api/{KEY}/subgraphs/id/{ID}`
+
+Live data only. No fixture or cached response ever reaches a verdict. When the gateway fails,
+the four market signals report an error rather than reporting "this token has no market", because
+a gap in our knowledge and a finding about the token are different things.
+
+Developer feedback for The Graph's data is in [FEEDBACK.md](./FEEDBACK.md), which documents three
+V3 subgraph fields that return plausible wrong answers. One of them became
+[a fix upstream](https://github.com/Uniswap/v3-subgraph/pull/310).
 
 ### Where the Ledger integration lives
 

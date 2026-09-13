@@ -111,7 +111,7 @@ describe('reading wallet-cli output', () => {
     // Verbatim from wallet-cli v2.1.0 with the Nano unplugged. It also exits 1,
     // but the JSON is what carries the reason.
     const real =
-      '{"type":"pre-verify-address","command":"receive","address":"0x8E2D0425c3aa61d811d546b605ABD745E054Ef49"}\n' +
+      '{"type":"pre-verify-address","command":"receive","address":"0x1111111111111111111111111111111111111111"}\n' +
       '{"ok":false,"error":{"command":"receive","code":"unknown","message":"No Ledger device found. Unlock the device and try again."}}';
     expect(parseWalletCli(real)).toMatchObject({
       ok: false,
@@ -160,7 +160,7 @@ describe('what counts as an approval', () => {
       command: 'receive',
       verified: true,
       source: 'device',
-      address: '0x8E2D0425c3aa61d811d546b605ABD745E054Ef49',
+      address: '0x1111111111111111111111111111111111111111',
     });
     expect(parseWalletCli(pressed).ok).toBe(true);
   });
