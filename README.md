@@ -11,6 +11,51 @@ ships as an MCP server, so the check happens inside the agent that was about to 
 
 ---
 
+## The boundary nobody was defending
+
+An autonomous agent crosses five boundaries. Each is a place something can go wrong.
+
+| Boundary | What crosses it | Defended by |
+|---|---|---|
+| Supply chain | What the agent installs | npmguard |
+| **Ingestion** | **What the agent reads** | **nobody** |
+| Discovery | What the agent trusts | Proof of Scan |
+| Signing | What the agent submits | ENShell |
+| Authority | What the agent may do | maki |
+
+Look at the agent-security projects that have won at recent events and four of those five have
+somebody on them. The one that does not is what the agent reads, and it is the cheapest of the
+five to attack.
+
+**Everything an agent reads on-chain was written by whoever deployed the contract, for the price
+of gas.** Token names, symbols, the verified source, the ABI function names. That text goes
+straight into the context window of something holding a private key.
+
+### What that looks like in practice
+
+Here is a real token on Ethereum mainnet. It reports **1.1 trillion dollars of liquidity**. Four
+transactions have touched it in four years. The source is verified and the name is friendly, so
+an agent reading the contract finds nothing wrong and signs.
+
+```
+PREFLIGHT  HIGH 94/100
+address    0x160de4468586b6b2f8a92feb0c260fc6cfc743b1  (chain 1)
+checks     11 of 11 completed
+gate       REFUSED. no Ledger detected over USB.
+
+WHY
+  [FIRED] liquidity-reality  (weight 0.85)
+          dormant capital: $1,110,167,010,696 locked across only 4 transaction(s)
+          in 1451 days, $277,541,752,674 per transaction
+          reading: value this large that nothing has traded against is reported
+          liquidity, not usable liquidity
+```
+
+Source code tells you what a contract may do. Indexed pool history tells you what it has done,
+and only one of those predicts a rug.
+
+---
+
 ## What existed before ETHOnline 2026
 
 **Base project:** Inspector AI, built at ETHGlobal Singapore, September 2024.
