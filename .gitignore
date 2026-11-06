@@ -14,3 +14,8 @@ dist
 secrets/*
 !secrets/*.enc
 !secrets/README.md
+
+# Foundry build output. contracts/broadcast stays committed: it is the
+# deployment record judges can check.
+contracts/out
+contracts/cache
