@@ -155,7 +155,7 @@ last money touched and whether it was safe:
 |---|---|---|
 | CaplineVault (verified) | Whitechain Sepolia, 1874 | [`0x31529ef8ec96f7a1bc5ea0166b3c040b1b95bbee`](https://explorer.testnet.whitechain.io/address/0x31529ef8ec96f7a1bc5ea0166b3c040b1b95bbee) |
 | PartnerSink (demo "partner", unverified on purpose) | Whitechain Sepolia, 1874 | [`0x4FECAE863ef2A0c64e211336C2bFCc822165c98a`](https://explorer.testnet.whitechain.io/address/0x4FECAE863ef2A0c64e211336C2bFCc822165c98a) |
-| CaplineVault | Base, 8453 | TODO |
+| CaplineVault (verified, Sourcify) | Base, 8453 | [`0x25d1946ee739e53160be890fbec9a2c66fc61799`](https://basescan.org/address/0x25d1946ee739e53160be890fbec9a2c66fc61799) |
 
 PartnerSink is the contract a hijacked agent gets tricked into paying. Preflight scores it
 HIGH: "unverified contract, deployed 1 min ago".
@@ -193,7 +193,7 @@ Deploy, verify and register commands: [contracts/README.md](contracts/README.md)
 ### Current limitations
 
 - No real users. This is a hackathon build with demo agents.
-- The Base vault and the live Flash order are not deployed yet (TODO above).
+- The live Flash order on Base is not linked yet (TODO above).
 - On Whitechain, Preflight has no Uniswap subgraph, so counterparties are scored from RPC and
   explorer checks (code, age, verified source, deployer) instead of the full engine.
 - Risk-triggered escalation under budget and gasless agent payments are planned, not built.

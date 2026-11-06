@@ -49,6 +49,7 @@ Partners: Whitechain (Continuity), Definitive (Continuity), Ethereum Foundation
 |---|---|---|
 | CaplineVault (verified) | Whitechain Sepolia 1874 | [`0x31529ef8ec96f7a1bc5ea0166b3c040b1b95bbee`](https://explorer.testnet.whitechain.io/address/0x31529ef8ec96f7a1bc5ea0166b3c040b1b95bbee) |
 | PartnerSink (demo, left unverified on purpose) | Whitechain Sepolia 1874 | [`0x4FECAE863ef2A0c64e211336C2bFCc822165c98a`](https://explorer.testnet.whitechain.io/address/0x4FECAE863ef2A0c64e211336C2bFCc822165c98a) |
+| CaplineVault (verified, Sourcify) | Base 8453 | [`0x25d1946ee739e53160be890fbec9a2c66fc61799`](https://basescan.org/address/0x25d1946ee739e53160be890fbec9a2c66fc61799) |
 
 ## Changelog
 
@@ -63,3 +64,6 @@ Partners: Whitechain (Continuity), Definitive (Continuity), Ethereum Foundation
 | 2026-11-06 | CaplineVault deployed and verified on Whitechain; first USDT payments from the agent to the merchant settle onchain |
 | 2026-11-06 | End-to-end passkey release on Whitechain (`pnpm test:e2e`) and a rehearsal of both demo flows (`scripts/rehearse.ts`) |
 | 2026-11-06 | Security pass: the phone reads the nonce from chain, caps expiry and builds its own digest; receipts mismatch blocks Approve |
+| 2026-11-07 | Real-phone approval on Whitechain: Face ID release of 5 USDT to the paying agent ([tx](https://explorer.testnet.whitechain.io/tx/0x6407088ce5c0d09665072b1ee460dc7f52189f8e3860ad8be0780d863aebcce1)) |
+| 2026-11-07 | Phone checks its passkey against the vault's owner key and can recover the right one; tunnel no longer masks relay errors |
+| 2026-11-07 | CaplineVault deployed and verified on Base; trading agent registered with a 15 USDC budget |
