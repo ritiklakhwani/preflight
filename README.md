@@ -9,11 +9,193 @@ a Ledger device for a physical press.
 It reads Uniswap V3 pool state through The Graph across Ethereum, Arbitrum and Base, and it
 ships as an MCP server, so the check happens inside the agent that was about to sign.
 
-> **ETHGlobal Mumbai 2026 (Continuity): Preflight Capline.** Preflight checks what your
-> agent touches; Capline decides whether it gets more money. Your agent stays under the
-> line until you've seen the receipts. What existed before the event and what is new this
-> weekend: [docs/MUMBAI.md](./docs/MUMBAI.md). The judged delta is
-> `git diff mumbai-2026-start..HEAD`.
+---
+
+## ETHGlobal Mumbai 2026: Preflight Capline
+
+**Your agent stays under the line until you've seen the receipts.**
+
+Preflight checks what your agent touches. Capline, new this weekend, decides whether it gets
+more money. The agent's wallet only ever holds one small tranche. When it runs dry, the agent
+asks, and the owner's phone shows what the last tranche bought: every payment and fill,
+rebuilt from chain data rather than from the agent's own account, each counterparty scored by
+Preflight. The owner approves with Face ID, and `CaplineVault` releases the next tranche only
+if the passkey signature covers exactly the receipts the owner saw.
+
+```
+  AI agent --MCP--> capline_request(amount, reason)
+                        |
+                        v
+  approval server   Receipts: transfer logs + Flash fills since the last release,
+                    each counterparty scored by Preflight -> receiptsHash
+                    push to the phone (request id only)
+                        |
+                        v
+  owner's phone     Receipts + verdicts + the agent's reason (marked unverified)
+  (PWA)             Face ID: passkey signs Release{agent, amount, nonce, expiry, receiptsHash}
+                        |   anyone can relay; nobody can alter it
+                        v
+  CaplineVault      verifies the P256 signature onchain, sends one tranche to the agent
+```
+
+If the agent is hijacked, the most it can spend is the tranche it holds. It cannot release
+more itself: calling `release` without the owner's signature reverts `BadSignature`.
+
+### Before / during
+
+**Before** (tag `mumbai-2026-start`, commit `a187cf3`, 2026-09-13): Preflight as the rest of
+this README describes it. An MCP server that scores contracts on onchain behaviour and sends a
+HIGH verdict to a Ledger. Its verdicts were advisory, so a hijacked agent could ignore them,
+and the only human gate needed a Ledger at a desk. No contracts, no web app.
+
+**During:** everything in `git diff mumbai-2026-start..HEAD`. The full list, with deployments
+and a dated changelog, is in [docs/MUMBAI.md](./docs/MUMBAI.md).
+
+| Piece | Path |
+|---|---|
+| `CaplineVault`, passkey-gated tranches, 21 forge tests with real P256 signatures | `contracts/` |
+| Vault client and EIP-712 types | `packages/capline/` |
+| Receipts builder | `packages/receipts/` |
+| MCP tools `capline_status`, `capline_request` | `packages/mcp/` |
+| Pocket Approve: approval server and phone app | `apps/approve/` |
+| Pay-per-call merchant API, settled in Whitechain USDT | `apps/merchant/` |
+| Paying agent (Whitechain) and trading agent (Base, Flash) | `agents/` |
+
+One fix to the existing engine: market signals now read the most-traded pool instead of the
+one with the highest reported value, so priced-up junk pools no longer flag WETH on Base
+(HIGH 85 before, CLEAN 0 after).
+
+The interfaces between all of these are in [docs/CAPLINE_SPEC.md](./docs/CAPLINE_SPEC.md).
+
+### Why this needs onchain stablecoin settlement
+
+No card or bank rail lets an owner release money to an autonomous agent in tranches the agent
+cannot unlock itself, with a contract (not our server) verifying the owner's signature over
+the receipts they saw.
+
+The agent pays the merchant API per call in USDT on Whitechain. The merchant checks the
+`Transfer` log itself, and Receipts reads the same log, so the merchant's proof of payment and
+the owner's view of the spend are one onchain record. Payments from the agent to the merchant:
+
+- [`0xe9bf9dbd...0aa92`](https://explorer.testnet.whitechain.io/tx/0xe9bf9dbda948a4d226f9f3a0265d2b6f3b64a2b01e67b9eddd08031f88b0aa92)
+- [`0xd5b76222...8105c`](https://explorer.testnet.whitechain.io/tx/0xd5b76222a6328b534c84be74e0197f4569675173b85e86e5ed68477f6108105c)
+
+### CROPS
+
+**New property: S (secure), and it is structural.** Before, a hijacked agent could ignore
+Preflight. Now spending authority is bounded onchain and only the owner's passkey can extend
+it. That does not depend on our server. Switch the approval server off and the agent still
+cannot spend past its tranche, because the vault holds the money. The owner can still approve:
+the phone app reads vault state from the chain, rebuilds receipts from raw transfer logs
+(labelled as having no verdicts), signs with Face ID, and submits the release with a local
+gas-only key, or shows the signed payload for anyone to relay.
+
+In plain terms: the phone buzzes, you see what it spent, Face ID.
+
+- **S:** The passkey's private key never leaves the phone's secure hardware. The vault checks
+  the signature with the P256 precompile (present on Whitechain and Base, about 129k gas per
+  release). The phone derives the digest from chain state itself, so a hostile server cannot
+  get a different release signed. Trust assumptions: the owner's device, and the vault code,
+  which is tested but not audited. The agent's key is a hot wallet, bounded to one tranche.
+- **C:** We run the approval server (receipts, push, relaying), the ntfy push topic and the
+  phone app's host (GitHub Pages). If the server goes away or refuses, the backend-off path
+  above still works. Trade-off: a passkey is bound to the domain that created it, and the
+  vault has no key rotation yet, so losing that domain would leave funds still in the vault
+  unreachable. The agent would keep only its current tranche.
+- **O:** MIT. Everything builds and runs from this repo: contracts with Foundry, the rest with
+  pnpm. No closed service is required for the vault, the phone app or the agents.
+- **P:** No trackers, analytics or third-party scripts in the phone app. Keys stay on the
+  device: localStorage holds only public data and a gas-only key that controls no funds. The
+  push carries only a request id, never an amount or address. Our server sees requests,
+  amounts and agent addresses. Public RPCs and the Whitechain explorer see the addresses the
+  phone and the receipts builder read.
+
+### Definitive Flash
+
+The trading agent on Base uses Flash as one tool in a longer workflow:
+
+1. **Preflight:** `preflight_check` on the token over the Preflight MCP server.
+2. **Tranche:** `capline_status`; if short, `capline_request`, and the owner approves the
+   USDC tranche from the phone.
+3. **Advanced order:** one Flash limit buy with an attached take-profit / stop-loss bracket,
+   placed from that tranche. The bracket widths come from the Preflight verdict: a riskier
+   token gets a tighter bracket, and HIGH never trades.
+4. **Receipts:** the fill appears, risk-scored, as a `flash_order` line in the next Receipts
+   screen, and is part of the `receiptsHash` the owner signs for the next tranche.
+
+Funds stay in the agent's wallet until the fill, and Definitive's executors land the
+settlement. `FLASH_VIA_MCP=1` places the order through Definitive's official MCP server
+(`npx -y @definitive-fi/flash-mcp`) instead of the REST client; that server has no attached
+brackets, so that path places the limit entry only. Details: [agents/trader-base](agents/trader-base/README.md).
+
+Onchain fill: TODO (Basescan link once the live order executes).
+
+### Prior art
+
+Agent spend caps with human approval are a common pattern in 2026. About ten ETHGlobal
+projects are named Leash: Leash Protocol, LEASH Agent Guard, LeashGuard, Re:Leash, Leash,
+Leash_dash, Leash Layer, Leashh and Leash AI. DSAP Protocol pairs spending limits with World ID
+approval, Quorly approves with your face, and Held escrows x402 payments until the buyer
+reviews what they bought.
+
+Those ask how much the agent may spend and whether a human clicked yes. Capline asks what the
+last money touched and whether it was safe:
+
+- **Risk-scored receipts.** Each past payment and fill carries Preflight's verdict on its
+  counterparty, from onchain history rather than source code.
+- **Rebuilt from the chain.** Receipts come from transfer logs and fills, not from the agent,
+  so a hijacked agent cannot rewrite its history.
+- **The owner signs what they saw.** The approval digest commits to `receiptsHash`, so a
+  release is bound to the exact list on the screen.
+
+### Contracts
+
+| Contract | Chain | Address |
+|---|---|---|
+| CaplineVault (verified) | Whitechain Sepolia, 1874 | [`0x31529ef8ec96f7a1bc5ea0166b3c040b1b95bbee`](https://explorer.testnet.whitechain.io/address/0x31529ef8ec96f7a1bc5ea0166b3c040b1b95bbee) |
+| PartnerSink (demo "partner", unverified on purpose) | Whitechain Sepolia, 1874 | [`0x4FECAE863ef2A0c64e211336C2bFCc822165c98a`](https://explorer.testnet.whitechain.io/address/0x4FECAE863ef2A0c64e211336C2bFCc822165c98a) |
+| CaplineVault | Base, 8453 | TODO |
+
+PartnerSink is the contract a hijacked agent gets tricked into paying. Preflight scores it
+HIGH: "unverified contract, deployed 1 min ago".
+
+End-to-end run on Whitechain (`pnpm test:e2e`, software P256 key signing through the phone
+app's own WebAuthn code):
+[release relayed by the server](https://explorer.testnet.whitechain.io/tx/0xbc803bbee0b1cd530b9061737e0c2191f28c31fcb0a983fa8e4b536c90eabcaf).
+The same run sends a replayed signature, an agent releasing to itself, and a release while
+dropped; all three revert onchain.
+
+### Run it
+
+```bash
+pnpm install
+cp .env.example .env                       # Capline variables: docs/CAPLINE_SPEC.md
+(cd contracts && forge test -vv)           # vault tests, real P256 signatures
+pnpm test
+
+# owner side: phone app on GitHub Pages, approval server behind a tunnel
+scripts/deploy-approve.sh
+scripts/tunnel-approve.sh
+
+# paying agent on Whitechain
+pnpm --filter @preflight/merchant evil                    # API with a prompt injection
+pnpm --filter @preflight/payer-whitechain scripted        # pays, then asks for 500
+pnpm --filter @preflight/payer-whitechain self-release    # reverts BadSignature
+
+# trading agent on Base
+pnpm --filter @preflight/trader-base dry-run              # prints Flash requests, sends none
+pnpm --filter @preflight/trader-base start                # spends real USDC
+```
+
+Deploy, verify and register commands: [contracts/README.md](contracts/README.md).
+
+### Current limitations
+
+- No real users. This is a hackathon build with demo agents.
+- The Base vault and the live Flash order are not deployed yet (TODO above).
+- On Whitechain, Preflight has no Uniswap subgraph, so counterparties are scored from RPC and
+  explorer checks (code, age, verified source, deployer) instead of the full engine.
+- Risk-triggered escalation under budget and gasless agent payments are planned, not built.
 
 ---
 
