@@ -9,6 +9,12 @@ a Ledger device for a physical press.
 It reads Uniswap V3 pool state through The Graph across Ethereum, Arbitrum and Base, and it
 ships as an MCP server, so the check happens inside the agent that was about to sign.
 
+> **ETHGlobal Mumbai 2026 (Continuity): Preflight Capline.** Preflight checks what your
+> agent touches; Capline decides whether it gets more money. Your agent stays under the
+> line until you've seen the receipts. What existed before the event and what is new this
+> weekend: [docs/MUMBAI.md](./docs/MUMBAI.md). The judged delta is
+> `git diff mumbai-2026-start..HEAD`.
+
 ---
 
 ## The boundary nobody was defending
