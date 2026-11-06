@@ -1,0 +1,14 @@
+{
+  "name": "@preflight/capline",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "viem": "^2.57.16",
+    "zod": "^3.25.76"
+  }
+}
