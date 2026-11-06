@@ -41,6 +41,7 @@ const ENV_OVERRIDES: Record<number, string> = {
 
 const GATEWAY = 'https://gateway.thegraph.com/api';
 const TIMEOUT_MS = 15_000;
+const RETRY_TIMEOUT_MS = 25_000;
 
 function env(key: string): string | undefined {
   const v = process.env[key];
@@ -224,12 +225,23 @@ export async function gql<T>(subgraphId: string, query: string, variables: unkno
     );
   }
 
-  const res = await fetch(`${GATEWAY}/${key}/subgraphs/id/${subgraphId}`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ query, variables }),
-    signal: AbortSignal.timeout(TIMEOUT_MS),
-  });
+  // The gateway is slow on a cold subgraph and fine right after, so a timeout
+  // or a 5xx gets one retry with a longer budget before the signal gives up.
+  const post = (timeoutMs: number) =>
+    fetch(`${GATEWAY}/${key}/subgraphs/id/${subgraphId}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ query, variables }),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  let res: Response;
+  try {
+    res = await post(TIMEOUT_MS);
+    if (res.status >= 500) res = await post(RETRY_TIMEOUT_MS);
+  } catch (err) {
+    if ((err as Error)?.name !== 'TimeoutError' && (err as Error)?.name !== 'AbortError') throw err;
+    res = await post(RETRY_TIMEOUT_MS);
+  }
 
   if (!res.ok) throw new Error(`gateway HTTP ${res.status}`);
 
