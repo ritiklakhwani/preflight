@@ -48,3 +48,8 @@ Partners: Whitechain (Continuity), Definitive (Continuity), Ethereum Foundation
 | Date (IST) | Change |
 |---|---|
 | 2026-11-06 | Workspace scaffolded: `contracts/`, `packages/capline`, `packages/receipts`, `apps/approve`, `agents/`, this file, WHITECHAIN_FEEDBACK.md |
+| 2026-11-06 | CaplineVault with passkey (WebAuthn P256) releases, 21 forge tests with real P256 signatures |
+| 2026-11-06 | `@preflight/capline` client, MCP tools `capline_status` and `capline_request` |
+| 2026-11-06 | Receipts builder: Whitechain via Blockscout and RPC, Base via the Preflight engine |
+| 2026-11-06 | Pocket Approve server and phone app, merchant API, paying agent, Flash trading agent |
+| 2026-11-06 | Preflight engine fix: market signals use the most-traded pool, so priced-up junk pools no longer flag WETH on Base |
