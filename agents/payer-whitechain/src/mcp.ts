@@ -25,8 +25,10 @@ export async function connectPreflightMcp(): Promise<PreflightMcp> {
   const env: Record<string, string> = {};
   for (const [k, v] of Object.entries(process.env)) if (typeof v === 'string') env[k] = v;
   // The MCP tools default the agent from this; make sure it is this wallet.
+  // The key wins over a stale CAPLINE_AGENT_ADDRESS in .env, or the agent
+  // would ask for a refill of some other wallet.
   try {
-    env.CAPLINE_AGENT_ADDRESS ||= agentAddress();
+    env.CAPLINE_AGENT_ADDRESS = agentAddress();
   } catch {
     // No key and no address: capline tools will need an explicit agent.
   }

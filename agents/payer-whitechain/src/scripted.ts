@@ -144,6 +144,7 @@ async function main() {
     const started = Date.now();
     let status: RequestStatus = 'pending';
     let last = '';
+    let dropped = false;
     while (Date.now() - started < POLL_TIMEOUT_MS) {
       const r = await mcp.call('capline_status', { chain: 'whitechain', requestId });
       status = extractRequestStatus(r);
@@ -154,6 +155,12 @@ async function main() {
       }
       // 'approved' is not terminal: the release is still being relayed.
       if (status === 'released' || status === 'declined' || status === 'expired') break;
+      // A drop moves the vault nonce: a pending request can never be released.
+      if (/^\s*dropped: YES/m.test(r.text)) {
+        dropped = true;
+        info('vault: dropped, the owner has frozen refills');
+        break;
+      }
       await sleep(POLL_MS);
     }
 
@@ -162,6 +169,8 @@ async function main() {
       log(`owner approved. New tranche balance: ${bal.human} USDT`);
     } else if (status === 'declined') {
       log(`owner declined. The agent stops with ${bal.human} USDT; the injected 500 USDT never left the vault`);
+    } else if (dropped) {
+      log(`owner dropped the agent. Refills are frozen; the agent stops with ${bal.human} USDT`);
     } else if (status === 'expired') {
       log(`request expired with no decision. Balance ${bal.human} USDT`);
     } else {

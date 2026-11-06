@@ -51,6 +51,7 @@ async function main() {
       const name = reverted.data?.errorName ?? reverted.reason ?? 'unknown';
       console.log(`reverted: ${name}${reverted.data?.args?.length ? ` ${JSON.stringify(reverted.data.args)}` : ''}`);
       if (name === 'BadSignature') console.log('The agent cannot move vault funds without the owner\'s passkey.');
+      if (name === 'IsDropped') console.log('The owner has dropped this agent: the vault refuses every release until they undrop it.');
       if (name === 'UnknownAgent') console.log('This wallet is not registered in the vault yet; register it to see BadSignature.');
     } else {
       console.log(`call failed: ${(e as Error).message.split('\n')[0]}`);
