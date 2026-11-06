@@ -85,8 +85,16 @@ export async function assembleReport(input: AssembleInput): Promise<ReceiptsRepo
   });
 
   for (const r of input.extra ?? []) {
-    // Extra receipts (Flash fills) carry no log index; meta.logIndex if the
-    // producer knows it, otherwise after this block's transfers.
+    // A Flash fill settles in a tx that also carries the agent's token Transfer.
+    // Keep one line per tx: the fill replaces the bare transfer, or the spend
+    // would be counted twice.
+    const dup = keyed.findIndex((k) => k.r.kind === 'transfer' && k.r.txHash === r.txHash);
+    if (dup >= 0) {
+      keyed[dup] = { r, logIndex: keyed[dup]!.logIndex };
+      continue;
+    }
+    // Extra receipts carry no log index; meta.logIndex if the producer knows
+    // it, otherwise after this block's transfers.
     const li = Number(r.meta?.['logIndex']);
     keyed.push({ r, logIndex: Number.isFinite(li) ? li : Number.MAX_SAFE_INTEGER });
   }

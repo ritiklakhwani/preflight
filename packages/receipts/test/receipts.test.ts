@@ -227,4 +227,23 @@ describe('assembleReport with a stubbed scorer', () => {
     expect(report.spent).toBe('425');
     expect(report.receiptsHash).toBe(receiptsHash(report.receipts));
   });
+
+  it('lets a Flash fill replace the transfer from the same settlement tx', async () => {
+    const scorer: Scorer = async () => ({ verdict: 'low', reasons: [] });
+    const flash = receipt({ kind: 'flash_order', blockNumber: 11, txHash: TX2, to: A, amount: '20', meta: { pair: 'ETH/USDC' } });
+    const report = await assembleReport({
+      chain: 'base',
+      agent: B,
+      fromBlock: 1,
+      toBlock: 20,
+      transfers: [
+        { chain: 'base', txHash: TX2, blockNumber: 11, logIndex: 3, from: B, to: A, token: TOKEN, amount: '20', timestamp: 1700000011 },
+      ],
+      extra: [flash],
+      scorer,
+    });
+    expect(report.receipts).toHaveLength(1);
+    expect(report.receipts[0]?.kind).toBe('flash_order');
+    expect(report.spent).toBe('20');
+  });
 });
