@@ -1,0 +1,32 @@
+{
+  "name": "@preflight/approve",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev:server": "node --env-file-if-exists=../../.env --watch --import tsx server/src/index.ts",
+    "dev:web": "vite web",
+    "build": "vite build web",
+    "start": "node --env-file-if-exists=../../.env --import tsx server/src/index.ts",
+    "register": "node --env-file-if-exists=../../.env --import tsx server/src/register.ts",
+    "typecheck": "tsc -p tsconfig.json && tsc -p web/tsconfig.json",
+    "test": "vitest run --root ../.. apps/approve/test"
+  },
+  "dependencies": {
+    "@hono/node-server": "^2.1.6",
+    "@preflight/capline": "workspace:*",
+    "@preflight/engine": "workspace:*",
+    "@preflight/quarantine": "workspace:*",
+    "@preflight/receipts": "workspace:*",
+    "hono": "^4.13.16",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "viem": "^2.57.16"
+  },
+  "devDependencies": {
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.2.1",
+    "vite": "^8.3.6"
+  }
+}

@@ -1,0 +1,4 @@
+server/data/
+web/dist/
+dist/
+node_modules/
