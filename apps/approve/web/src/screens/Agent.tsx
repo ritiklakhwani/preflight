@@ -18,12 +18,12 @@ import {
 import { formatEther, isAddress } from 'viem';
 import { readableError } from '../../../server/src/errors.js';
 import { api, ApiError, type ServerRequest } from '../api.js';
-import { CHAIN_META, addressUrl, txUrl, type ChainKey } from '../config.js';
+import { CHAIN_META, addressLabel, addressUrl, txUrl, type ChainKey } from '../config.js';
 import { ago, money, short } from '../format.js';
 import { passkeyError, signDigest } from '../passkey.js';
 import { ZERO_HASH, rawReceipts } from '../receipts.js';
 import { getBurner, getPasskey, rememberAgent, resetBurner } from '../storage.js';
-import { Copy, Field, Header, OfflineBanner, StatusPill, useServer } from '../ui.js';
+import { Addr, Copy, Field, Header, Icon, OfflineBanner, Section, StatusPill, useServer } from '../ui.js';
 import type { Hex } from '../webauthn.js';
 
 interface View {
@@ -142,61 +142,92 @@ export function AgentScreen({ chain, agent }: { chain: ChainKey; agent: `0x${str
     }
   };
 
+  const label = addressLabel(chain, agent);
   return (
     <>
       <Header title="Agent" back="#/" />
       <OfflineBanner />
       <main>
-        <section className="card">
-          <div className="cp-row">
-            <a className="mono big" href={addressUrl(chain, agent)} target="_blank" rel="noreferrer">
-              {short(agent, 6)}
-            </a>
+        <section className="card hero">
+          <div className="hero-top">
+            <span className="eyebrow">Agent wallet</span>
             {view ? (
               <span className={`pill ${view.dropped ? 's-dropped' : 's-active'}`}>{view.dropped ? 'Dropped' : 'Active'}</span>
             ) : null}
           </div>
-          <div className="muted small">{meta.name}</div>
-          {loadErr ? <div className="error">{loadErr}</div> : null}
-          {!view && !loadErr ? <p className="muted">Reading the vault...</p> : null}
-          {view ? (
-            <>
+          {label ? <div className="strong">{label}</div> : null}
+          <a className="addr-mono big" href={addressUrl(chain, agent)} target="_blank" rel="noreferrer">
+            {short(agent, 6)}
+          </a>
+          <div className="hero-foot">
+            <span className="pill">{meta.name}</span>
+            {view ? (
+              <span className="faint small">Read from {view.source === 'chain' ? 'the chain directly' : 'the server'}</span>
+            ) : null}
+          </div>
+        </section>
+
+        {loadErr ? <div className="error">{loadErr}</div> : null}
+        {!view && !loadErr ? <div className="card muted">Reading the vault...</div> : null}
+
+        {view ? (
+          <Section label="Vault">
+            <div className="card">
               <div className="stats">
                 <Field label="In the vault">{money(view.balance, chain)}</Field>
                 <Field label="Tranche left in wallet">{money(view.wallet, chain)}</Field>
                 <Field label="Nonce">{view.nonce.toString()}</Field>
                 <Field label="Last refill block">{view.lastReleaseBlock.toString()}</Field>
               </div>
-              <div className="muted small">Read from {view.source === 'chain' ? 'the chain directly' : 'the server'}.</div>
               {passkey && view.qx.toLowerCase() !== passkey.qx.toLowerCase() ? (
                 <div className="warnline">This agent was registered with a different passkey than the one on this phone.</div>
               ) : null}
-            </>
-          ) : null}
-        </section>
+            </div>
+          </Section>
+        ) : null}
 
-        {view && passkey ? (
-          view.dropped ? (
-            <button className="btn secondary" disabled={!!busy} onClick={() => flag('undrop')}>
-              {busy === 'undrop' ? 'Signing...' : 'Undrop agent'}
-            </button>
-          ) : (
-            <button className="btn danger" disabled={!!busy} onClick={() => flag('drop')}>
-              {busy === 'drop' ? 'Signing...' : 'Drop agent'}
-            </button>
-          )
+        {view || !passkey ? (
+          <Section label="Controls">
+            <div className="card form">
+              {view && passkey ? (
+                view.dropped ? (
+                  <>
+                    <p className="muted small">Refills are frozen. Undrop to let the agent ask again.</p>
+                    <button className="btn secondary" disabled={!!busy} onClick={() => flag('undrop')}>
+                      {busy === 'undrop' ? 'Signing...' : 'Undrop agent'}
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <p className="muted small">Drop freezes all refills until you undrop. Use it if something looks wrong.</p>
+                    <button className="btn danger" disabled={!!busy} onClick={() => flag('drop')}>
+                      {busy === 'drop' ? 'Signing...' : 'Drop agent'}
+                    </button>
+                  </>
+                )
+              ) : null}
+              {!passkey ? (
+                <>
+                  <p className="muted small">Set up a passkey on this phone to control this agent.</p>
+                  <a className="btn secondary" href="#/setup">
+                    Set up passkey
+                  </a>
+                </>
+              ) : null}
+            </div>
+          </Section>
         ) : null}
-        {view && !view.dropped ? <p className="muted small center">Drop freezes all refills until you undrop.</p> : null}
-        {!passkey ? (
-          <a className="btn secondary" href="#/setup">
-            Set up passkey
-          </a>
-        ) : null}
+
         {tx ? (
-          <div className="card done">
-            <p className="strong">Sent onchain.</p>
-            <a href={txUrl(chain, tx)} target="_blank" rel="noreferrer">
-              View transaction
+          <div className="card outcome done">
+            <div className="outcome-title">
+              <span className="tick">
+                <Icon name="check" size={14} />
+              </span>
+              Sent onchain
+            </div>
+            <a className="tx-link" href={txUrl(chain, tx)} target="_blank" rel="noreferrer">
+              View transaction <Icon name="external" size={14} />
             </a>
           </div>
         ) : null}
@@ -207,27 +238,36 @@ export function AgentScreen({ chain, agent }: { chain: ChainKey; agent: `0x${str
         ) : null}
 
         {requests.length > 0 ? (
-          <section className="card">
-            <div className="section-title">Requests</div>
-            {requests.map((r) => (
-              <a key={r.id} className="row-link" href={`#/r/${r.id}`}>
-                <span>
-                  <strong>{money(r.amount, chain)}</strong> <span className="muted small">{ago(r.createdAt)}</span>
-                </span>
-                <StatusPill status={r.status} />
-              </a>
-            ))}
-          </section>
+          <Section label="Requests">
+            <div className="card list">
+              {requests.map((r) => (
+                <a key={r.id} className="row-link" href={`#/r/${r.id}`}>
+                  <span className="stack">
+                    <span className="amt">{money(r.amount, chain)}</span>
+                    <span className="faint small">{ago(r.createdAt)}</span>
+                  </span>
+                  <span className="row-end">
+                    <StatusPill status={r.status} />
+                    <span className="faint">
+                      <Icon name="chevron" size={14} />
+                    </span>
+                  </span>
+                </a>
+              ))}
+            </div>
+          </Section>
         ) : null}
 
         {view && passkey ? (
-          <section className="card">
-            <button className="disclosure" onClick={() => setDirectOpen(!directOpen)} aria-expanded={directOpen}>
-              <span className="section-title">Release directly</span>
-              <span className="muted">{directOpen ? 'Hide' : 'Show'}</span>
-            </button>
-            {directOpen ? <DirectRelease chain={chain} agent={agent} view={view} onSent={() => void load()} /> : null}
-          </section>
+          <Section label="Without the server">
+            <div className="card">
+              <button className="disclosure" onClick={() => setDirectOpen(!directOpen)} aria-expanded={directOpen}>
+                <span className="strong">Release directly</span>
+                <span className="muted small">{directOpen ? 'Hide' : 'Show'}</span>
+              </button>
+              {directOpen ? <DirectRelease chain={chain} agent={agent} view={view} onSent={() => void load()} /> : null}
+            </div>
+          </Section>
         ) : null}
       </main>
     </>
@@ -299,7 +339,7 @@ function DirectRelease({
       <p className="muted small">
         No server needed. The phone reads the vault, builds the message, signs it with your passkey and sends it itself.
       </p>
-      <div className="sub-title">Receipts (raw transfer logs, not risk-scored)</div>
+      <div className="sub-title">History (raw transfer logs, not risk-scored)</div>
       {reportErr ? <div className="warnline">Could not read transfer logs: {reportErr}</div> : null}
       {!report && !reportErr ? <p className="muted small">Reading transfer logs...</p> : null}
       {report ? (
@@ -308,16 +348,16 @@ function DirectRelease({
             Spent <strong>{money(report.spent, chain)}</strong> in {report.receipts.length} transfers since block{' '}
             {report.fromBlock}
           </p>
-          <ul className="receipts compact">
+          <ul className="receipts">
             {report.receipts.slice(0, 10).map((x) => (
               <li key={`${x.txHash}-${x.to}-${x.amount}`} className="receipt">
-                <div className="receipt-top">
-                  <span className="mono">{short(x.to, 4)}</span>
-                  <span className="receipt-amt">{money(x.amount, chain)}</span>
-                </div>
-                <a href={x.link} target="_blank" rel="noreferrer" className="tx">
-                  View tx
-                </a>
+                <Addr chain={chain} address={x.to} />
+                <span className="receipt-end">
+                  <span className="amt">{money(x.amount, chain)}</span>
+                  <a href={x.link} target="_blank" rel="noreferrer" className="tx-link">
+                    View tx
+                  </a>
+                </span>
               </li>
             ))}
           </ul>
@@ -417,7 +457,7 @@ function SignedPanel({
   const expired = Math.floor(Date.now() / 1000) > signed.expiry;
   return (
     <div className="card signed">
-      <div className="section-title">Signed {signed.kind}</div>
+      <div className="card-title">Signed {signed.kind}</div>
       <p className="muted small">Valid for 10 minutes. Anyone can send it; nobody can change it.</p>
       <Field label="Gas wallet on this phone">
         <span className="mono">{short(burner.address, 6)}</span> <Copy text={burner.address} />
@@ -439,10 +479,10 @@ function SignedPanel({
         </button>
       </div>
       {tx ? (
-        <div className="done">
-          <p className="strong">Sent onchain.</p>
-          <a href={txUrl(chain, tx)} target="_blank" rel="noreferrer">
-            View transaction
+        <div className="outcome done inset">
+          <div className="outcome-title">Sent onchain</div>
+          <a className="tx-link" href={txUrl(chain, tx)} target="_blank" rel="noreferrer">
+            View transaction <Icon name="external" size={14} />
           </a>
         </div>
       ) : (
