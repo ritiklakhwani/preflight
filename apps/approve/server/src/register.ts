@@ -30,6 +30,20 @@ const pub = publicClient(chain);
 const wallet = walletClient(chain, pk);
 const owner = privateKeyToAccount(pk).address;
 
+// Registration is first come, first served and binds whatever passkey the
+// caller names. Refuse a taken slot before spending an approve, and confirm
+// after the tx that the slot holds our key, not a front-runner's.
+const slot = () => pub.readContract({ address: vault, abi: vaultAbi, functionName: 'getAgent', args: [agent] });
+const before = await slot();
+if (before.token !== '0x0000000000000000000000000000000000000000') {
+  const ours = before.qx.toLowerCase() === qx.toLowerCase() && before.qy.toLowerCase() === qy.toLowerCase();
+  fail(
+    ours
+      ? `agent ${agent} is already registered with this passkey; nothing to do`
+      : `agent ${agent} is already registered with a DIFFERENT passkey. Do not deposit to it; use a fresh agent wallet.`,
+  );
+}
+
 const decimals = await pub.readContract({ address: cfg.token, abi: erc20Abi, functionName: 'decimals' });
 const amount = parseUnits(amountArg, decimals);
 console.log(`chain ${chain}, vault ${vault}, token ${cfg.token} (${decimals} decimals)`);
@@ -65,3 +79,7 @@ const hash = await wallet.writeContract({
 const receipt = await pub.waitForTransactionReceipt({ hash });
 console.log(`register tx ${hash} status ${receipt.status}`);
 if (receipt.status !== 'success') process.exit(1);
+const after = await slot();
+if (after.qx.toLowerCase() !== qx.toLowerCase() || after.qy.toLowerCase() !== qy.toLowerCase()) {
+  fail(`agent ${agent} is registered with a different passkey than the one given. Do not deposit to it.`);
+}
