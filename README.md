@@ -198,6 +198,17 @@ Deploy, verify and register commands: [contracts/README.md](contracts/README.md)
   explorer checks (code, age, verified source, deployer) instead of the full engine.
 - Risk-triggered escalation under budget and gasless agent payments are planned, not built.
 
+### What comes next
+
+- **One-line setup.** `claude mcp add preflight` already brings the Capline tools. Next, the
+  first `capline_request` prints a QR code; the owner scans it, Face ID creates the passkey and
+  approves the first budget, and that registers the agent. No server or tunnel to run.
+- **Native web push.** Notifications go through ntfy today (open source, self-hostable, the
+  push carries only a request id). The phone app can receive standard Web Push itself once
+  added to the home screen, which removes the extra app.
+- **Hosted relay with the same trust model.** The phone checks everything it signs and can
+  submit straight to the chain, so a hosted relay is a convenience, never a custodian.
+
 ---
 
 ## The boundary nobody was defending
