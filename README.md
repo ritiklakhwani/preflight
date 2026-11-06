@@ -46,7 +46,8 @@ more itself: calling `release` without the owner's signature reverts `BadSignatu
 **Before** (tag `mumbai-2026-start`, commit `a187cf3`, 2026-09-13): Preflight as the rest of
 this README describes it. An MCP server that scores contracts on onchain behaviour and sends a
 HIGH verdict to a Ledger. Its verdicts were advisory, so a hijacked agent could ignore them,
-and the only human gate needed a Ledger at a desk. No contracts, no web app.
+and the only human gate needed a Ledger at a desk. No contracts, no web app. Earlier
+submission: [ETHOnline 2026 showcase](https://ethglobal.com/showcase/preflight-mcp-1i1qm).
 
 **During:** everything in `git diff mumbai-2026-start..HEAD`. The full list, with deployments
 and a dated changelog, is in [docs/MUMBAI.md](./docs/MUMBAI.md).

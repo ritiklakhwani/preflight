@@ -9,7 +9,7 @@
 | Base project | Preflight, ETHOnline 2026 (Ledger Continuity, 2nd place) |
 | Starting commit | `a187cf313d4d769e165e4332e8f165cd11d976a1`, 2026-09-13 |
 | Tag | `mumbai-2026-start` points at that commit |
-| Earlier submission | ETHOnline 2026 showcase page: _link to add_ |
+| Earlier submission | ETHOnline 2026 showcase page: [preflight-mcp-1i1qm](https://ethglobal.com/showcase/preflight-mcp-1i1qm) |
 
 Everything judged for Mumbai is the diff:
 
