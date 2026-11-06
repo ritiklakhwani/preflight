@@ -1,34 +1,21 @@
 import { useEffect, useMemo, useState } from 'react';
-import { releaseDigest, requireVault } from '@preflight/capline';
+import { readAgent, requireVault } from '@preflight/capline';
 import { api, ApiError, type ServerRequest } from '../api.js';
 import { txUrl, addressUrl, CHAIN_META } from '../config.js';
 import { countdown, money, short } from '../format.js';
 import { passkeyError, signDigest } from '../passkey.js';
-import { hashReceipts } from '../receipts.js';
 import { getAgents, getPasskey, rememberAgent } from '../storage.js';
 import { Header, OfflineBanner, StatusPill, VerdictBadge, useNow, useServer } from '../ui.js';
+import { checkRequest, type ChainView } from '../verify.js';
 
 /** Re-derives what the passkey will sign, so the phone never trusts the server's digest. */
-function verify(r: ServerRequest): { digestOk: boolean; receiptsOk: boolean; error?: string } {
+function verify(r: ServerRequest, chain: ChainView | undefined, now: number) {
   try {
-    const digest = releaseDigest({
-      chain: r.chain,
-      vault: requireVault(r.chain),
-      agent: r.agent,
-      amount: BigInt(r.amount),
-      nonce: r.nonce,
-      expiry: r.expiry,
-      receiptsHash: r.receipts.receiptsHash,
-    });
-    let receiptsOk = false;
-    try {
-      receiptsOk = hashReceipts(r.receipts.receipts) === r.receipts.receiptsHash;
-    } catch {
-      receiptsOk = false;
-    }
-    return { digestOk: digest === r.digest, receiptsOk };
+    return checkRequest(r, { vault: requireVault(r.chain), now, chain });
   } catch (err) {
-    return { digestOk: false, receiptsOk: false, error: (err as Error).message };
+    return { ok: false, receiptsOk: false, nonceOnChain: false, problems: [(err as Error).message], warnings: [] } as ReturnType<
+      typeof checkRequest
+    >;
   }
 }
 
@@ -37,6 +24,8 @@ export function RequestScreen({ id }: { id: string }) {
   const [loadErr, setLoadErr] = useState<ApiError>();
   const [busy, setBusy] = useState<'approve' | 'decline'>();
   const [actionErr, setActionErr] = useState<string>();
+  // Read straight from the chain, not the server: the nonce goes into the digest.
+  const [chainView, setChainView] = useState<ChainView>();
   const now = useNow();
   const { state: server } = useServer();
   const passkey = getPasskey();
@@ -47,6 +36,12 @@ export function RequestScreen({ id }: { id: string }) {
         setReq(r);
         setLoadErr(undefined);
         rememberAgent({ chain: r.chain, agent: r.agent });
+        if (r.status === 'pending') {
+          readAgent(r.chain, r.agent).then(
+            (s) => setChainView({ nonce: s.nonce, dropped: s.dropped, balance: s.balance, lastReleaseBlock: s.lastReleaseBlock }),
+            () => {}, // keep the last good read; with none, the screen says the nonce is unconfirmed
+          );
+        }
       },
       (e: ApiError) => setLoadErr(e),
     );
@@ -58,7 +53,8 @@ export function RequestScreen({ id }: { id: string }) {
     return () => clearInterval(t);
   }, [id]);
 
-  const check = useMemo(() => (req ? verify(req) : undefined), [req]);
+  // Expiry is checked against the clock, so re-check as time passes.
+  const check = useMemo(() => (req ? verify(req, chainView, now) : undefined), [req, chainView, now]);
 
   if (!req) {
     return (
@@ -93,15 +89,16 @@ export function RequestScreen({ id }: { id: string }) {
 
   const left = req.expiry - now;
   const live = req.status === 'pending' && left > 0;
-  const canApprove = live && !!passkey && !!check?.digestOk && !busy;
+  const canApprove = live && !!passkey && !!check?.ok && !!check.digest && !busy;
 
   const approve = async () => {
-    if (!passkey) return;
+    if (!passkey || !check?.ok || !check.digest) return;
+    const digest = check.digest;
     setActionErr(undefined);
     setBusy('approve');
     try {
       // signDigest is the first await: Safari needs Face ID to start from the tap.
-      const auth = await signDigest(req.digest, passkey.credentialId);
+      const auth = await signDigest(digest, passkey.credentialId);
       const { txHash } = await api.approve(req.id, auth);
       setReq({ ...req, status: 'released', txHash });
     } catch (err) {
@@ -181,7 +178,7 @@ export function RequestScreen({ id }: { id: string }) {
         <section className="card">
           <div className="section-title">Receipts since last refill</div>
           <p className="summary">
-            Spent <strong>{money(rc.spent, req.chain)}</strong> in {rc.receipts.length}{' '}
+            Spent <strong>{money(check?.spent ?? rc.spent, req.chain)}</strong> in {rc.receipts.length}{' '}
             {rc.receipts.length === 1 ? 'payment' : 'payments'}
             <span className="muted">
               {' '}
@@ -199,7 +196,7 @@ export function RequestScreen({ id }: { id: string }) {
                 <div className="receipt-mid">
                   <VerdictBadge verdict={x.verdict} />
                   {x.kind === 'flash_order' ? <span className="pill">Flash order</span> : null}
-                  <a href={x.link} target="_blank" rel="noreferrer" className="tx">
+                  <a href={txUrl(req.chain, encodeURIComponent(x.txHash))} target="_blank" rel="noreferrer" className="tx">
                     View tx
                   </a>
                 </div>
@@ -218,14 +215,19 @@ export function RequestScreen({ id }: { id: string }) {
 
         <section className="card checks">
           <div className="section-title">Checked on this phone</div>
-          <div className={check?.digestOk ? 'ok' : 'bad'}>
-            {check?.digestOk
+          <div className={check?.ok ? 'ok' : 'bad'}>
+            {check?.ok
               ? 'Face ID signs exactly this amount, agent and Receipts list.'
-              : `Signature target does not match this request. Approve is blocked.${check?.error ? ` ${check.error}` : ''}`}
+              : `Signature target does not match this request. Approve is blocked. ${check?.problems.join(' ') ?? ''}`}
           </div>
           <div className={check?.receiptsOk ? 'ok' : 'warnline'}>
-            {check?.receiptsOk ? 'Receipts hash matches the list above.' : 'Receipts hash could not be re-derived here.'}
+            {check?.receiptsOk ? 'Receipts hash matches the list above.' : 'Receipts hash does not match the list above.'}
           </div>
+          {check?.warnings.map((w) => (
+            <div key={w} className="warnline">
+              {w}
+            </div>
+          ))}
         </section>
 
         {req.status === 'released' && req.txHash ? (

@@ -62,6 +62,17 @@ export function AgentScreen({ chain, agent }: { chain: ChainKey; agent: `0x${str
 
   const load = useCallback(async () => {
     try {
+      // The chain is the source of truth, and drop/undrop sign over its nonce:
+      // a server that lies about the nonce must not decide what Face ID signs.
+      const fromChain = await readFromChain(chain, agent).catch(() => undefined);
+      if (fromChain) {
+        setView(fromChain);
+        setLoadErr(undefined);
+        if (server === 'online') {
+          api.listRequests(agent).then((l) => setRequests(l.filter((r) => r.chain === chain)), () => {});
+        }
+        return;
+      }
       if (server === 'online') {
         try {
           const s = await api.agentState(chain, agent);
@@ -115,13 +126,17 @@ export function AgentScreen({ chain, agent }: { chain: ChainKey; agent: `0x${str
           void load();
           return;
         } catch (e) {
-          if (!(e instanceof ApiError) || e.status !== 0) throw e;
+          if (!(e instanceof ApiError)) throw e;
+          // The kill switch must not depend on the server: keep the signature either way.
+          if (e.status !== 0) setErr(`The server did not send it (${e.message}). You can send it from this phone below.`);
         }
       }
-      // No server: keep the signature and let the owner send it from here.
+      // No server, or it failed: keep the signature and let the owner send it from here.
       setSigned({ kind, expiry, auth });
     } catch (e) {
       setErr(e instanceof ApiError ? e.message : passkeyError(e));
+      // A release may have moved the nonce under us; re-read so the next tap signs the current one.
+      void load();
     } finally {
       setBusy(undefined);
     }

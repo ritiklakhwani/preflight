@@ -3,7 +3,7 @@
 // fallback list straight from chain logs when the server is down.
 import { getAddress, keccak256, parseAbiItem, stringToBytes, type Hex } from 'viem';
 import { getChain, publicClient, type Receipt, type ReceiptsReport } from '@preflight/capline';
-import type { ChainKey } from './config.js';
+import type { ChainKey } from '@preflight/capline';
 
 export const ZERO_HASH = `0x${'0'.repeat(64)}` as Hex;
 
