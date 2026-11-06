@@ -3,7 +3,7 @@ import { readAgent, requireVault } from '@preflight/capline';
 import { api, ApiError, type ServerRequest } from '../api.js';
 import { txUrl, addressUrl, CHAIN_META } from '../config.js';
 import { countdown, money, short } from '../format.js';
-import { passkeyError, signDigest } from '../passkey.js';
+import { passkeyError, recoverPasskey, signDigest } from '../passkey.js';
 import { getAgents, getPasskey, rememberAgent } from '../storage.js';
 import { Header, OfflineBanner, StatusPill, VerdictBadge, useNow, useServer } from '../ui.js';
 import { checkRequest, type ChainView } from '../verify.js';
@@ -22,7 +22,7 @@ function verify(r: ServerRequest, chain: ChainView | undefined, now: number) {
 export function RequestScreen({ id }: { id: string }) {
   const [req, setReq] = useState<ServerRequest>();
   const [loadErr, setLoadErr] = useState<ApiError>();
-  const [busy, setBusy] = useState<'approve' | 'decline'>();
+  const [busy, setBusy] = useState<'approve' | 'decline' | 'recover'>();
   const [actionErr, setActionErr] = useState<string>();
   // Read straight from the chain, not the server: the nonce goes into the digest.
   const [chainView, setChainView] = useState<ChainView>();
@@ -30,7 +30,7 @@ export function RequestScreen({ id }: { id: string }) {
   const [ownerKey, setOwnerKey] = useState<{ qx: string; qy: string }>();
   const now = useNow();
   const { state: server } = useServer();
-  const passkey = getPasskey();
+  const [passkey, setPasskeyState] = useState(getPasskey);
 
   const load = () =>
     api.getRequest(id).then(
@@ -113,6 +113,20 @@ export function RequestScreen({ id }: { id: string }) {
     } catch (err) {
       setActionErr(err instanceof ApiError ? err.message : passkeyError(err));
       void load();
+    } finally {
+      setBusy(undefined);
+    }
+  };
+
+  const recover = async () => {
+    if (!ownerKey) return;
+    setActionErr(undefined);
+    setBusy('recover');
+    try {
+      // recoverPasskey is the first await: Safari needs Face ID to start from the tap.
+      setPasskeyState(await recoverPasskey({ qx: ownerKey.qx as `0x${string}`, qy: ownerKey.qy as `0x${string}` }));
+    } catch (err) {
+      setActionErr(passkeyError(err));
     } finally {
       setBusy(undefined);
     }
@@ -257,6 +271,9 @@ export function RequestScreen({ id }: { id: string }) {
           <div className="error">
             The passkey on this phone (qx {short(passkey!.qx, 6)}) is not the one this agent was registered with (qx{' '}
             {short(ownerKey!.qx, 6)}). Approving would fail onchain.
+            <button className="btn secondary" disabled={!!busy} onClick={recover} style={{ marginTop: 12 }}>
+              {busy === 'recover' ? 'Waiting for Face ID...' : 'Use my other passkey'}
+            </button>
           </div>
         ) : null}
         {!passkey && live ? (

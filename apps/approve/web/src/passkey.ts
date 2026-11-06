@@ -98,3 +98,39 @@ export function passkeyError(err: unknown): string {
   if (e?.name === 'SecurityError') return 'Passkeys need HTTPS on the domain the passkey was made for.';
   return e?.message ?? String(err);
 }
+
+/**
+ * Finds the passkey that owns an agent when this phone saved a different one
+ * (a second "Create passkey", another browser). iOS lists every passkey for
+ * this site; the one picked is kept only if its signature verifies against the
+ * owner key read from the vault. Must run straight from a tap.
+ */
+export async function recoverPasskey(owner: { qx: Hex; qy: Hex }): Promise<StoredPasskey> {
+  if (!passkeySupported()) throw new Error('This browser has no passkey support.');
+  const cred = (await navigator.credentials.get({
+    publicKey: {
+      challenge: crypto.getRandomValues(new Uint8Array(32)),
+      userVerification: 'required',
+      timeout: 120_000,
+    },
+  })) as PublicKeyCredential | null;
+  if (!cred) throw new Error('No passkey was picked.');
+  const res = cred.response as AuthenticatorAssertionResponse;
+  const json = buildAuth({
+    signature: new Uint8Array(res.signature),
+    authenticatorData: new Uint8Array(res.authenticatorData),
+    clientDataJSON: new Uint8Array(res.clientDataJSON),
+  });
+  if (!(await verifyAssertion(json, owner.qx, owner.qy))) {
+    throw new Error('That passkey is not the owner of this agent. Tap again and pick the other Capline passkey.');
+  }
+  const stored: StoredPasskey = {
+    credentialId: base64urlEncode(new Uint8Array(cred.rawId)),
+    qx: owner.qx,
+    qy: owner.qy,
+    rpId: location.hostname,
+    createdAt: Math.floor(Date.now() / 1000),
+  };
+  setPasskey(stored);
+  return stored;
+}
