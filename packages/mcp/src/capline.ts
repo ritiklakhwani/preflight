@@ -42,22 +42,25 @@ export function resolveAgent(agent?: string): Address {
 }
 
 const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e));
+/** Server-supplied tokens are printed bare only when they cannot carry prose. */
+const bare = (v: unknown, re: RegExp) => (typeof v === 'string' && re.test(v) ? v : '(invalid)');
+const ID = /^[A-Za-z0-9_-]{1,64}$/;
 
-export function renderRequestStatus(chain: ChainKey, r: Request, nonce: string): string {
+export function renderRequestStatus(chain: ChainKey, r: Request, nonce: string, dropped = false): string {
   const lines = [
-    `REQUEST ${r.id}: ${r.status.toUpperCase()}`,
+    `REQUEST ${bare(r.id, ID)}: ${bare(r.status, /^[a-z]{1,16}$/).toUpperCase()}`,
     `  amount: ${formatAmount(chain, BigInt(r.amount))} ${getChain(chain).tokenSymbol}`,
     `  reason (unverified): ${delimit(r.reason, nonce)}`,
   ];
   if (r.counterparty) {
     lines.push(
-      `  counterparty: ${r.counterparty.address} verdict ${r.counterparty.verdict}` +
+      `  counterparty: ${bare(r.counterparty.address, /^0x[0-9a-fA-F]{40}$/)} verdict ${bare(r.counterparty.verdict, /^[a-z]{1,16}$/)}` +
         (r.counterparty.reasons.length
           ? ` ${delimit(r.counterparty.reasons.join('; '), nonce)}`
           : ''),
     );
   }
-  if (r.txHash) lines.push(`  tx: ${getChain(chain).explorer}/tx/${r.txHash}`);
+  if (r.txHash) lines.push(`  tx: ${getChain(chain).explorer}/tx/${bare(r.txHash, /^0x[0-9a-fA-F]{64}$/)}`);
   const next: Record<Request['status'], string> = {
     pending: 'Waiting for the owner. Poll capline_status again later; do not resubmit.',
     approved: 'Approved, release is being relayed. Poll capline_status for the wallet balance.',
@@ -65,7 +68,11 @@ export function renderRequestStatus(chain: ChainKey, r: Request, nonce: string):
     declined: 'The owner declined. Do not retry the same request; continue within your current balance or stop.',
     expired: 'The request expired unanswered. Only file a new one if the task still needs it.',
   };
-  lines.push(`  next: ${next[r.status]}`);
+  // A drop moves the vault nonce, so a still pending request can never land.
+  const frozen = dropped && (r.status === 'pending' || r.status === 'approved');
+  lines.push(
+    `  next: ${frozen ? 'The owner has dropped (frozen) this agent; this request cannot be released. Stop and tell the user.' : (next[r.status] ?? 'Unknown status. Do not act on it; check again later.')}`,
+  );
   return lines.join('\n');
 }
 
@@ -79,6 +86,7 @@ export async function caplineStatus(input: {
   const nonce = randomBytes(4).toString('hex');
   const out: string[] = [];
   let failed = false;
+  let dropped = false;
 
   let agent: Address;
   try {
@@ -90,6 +98,7 @@ export async function caplineStatus(input: {
   // Chain first: it is the source of truth and works with the server down.
   try {
     const [state, wallet] = await Promise.all([readAgent(cfg, agent), walletBalance(cfg, agent)]);
+    dropped = state.dropped;
     const sym = cfg.tokenSymbol;
     out.push(`CAPLINE ${cfg.name} agent ${agent}`);
     if (!isRegistered(state)) {
@@ -112,11 +121,11 @@ export async function caplineStatus(input: {
   if (requestId) {
     try {
       const r = await createApiClient(apiUrl(), { timeoutMs: 8000 }).getRequest(requestId);
-      out.push('', renderRequestStatus(chain, r, nonce));
+      out.push('', renderRequestStatus(chain, r, nonce, dropped));
       requestOk = true;
     } catch (e) {
       const hint = failed ? 'Check again later.' : 'On-chain state above is current; check again later.';
-      out.push('', `Request ${requestId}: approval server unreachable (${errMsg(e)}). ${hint}`);
+      out.push('', `Request ${bare(requestId, ID)}: approval server unreachable (${delimit(errMsg(e), nonce)}). ${hint}`);
     }
   }
 
@@ -155,10 +164,10 @@ export async function caplineRequest(input: {
     const sym = getChain(chain).tokenSymbol;
     return {
       text: [
-        `requestId: ${res.id}`,
-        `status: ${res.status}`,
+        `requestId: ${bare(res.id, ID)}`,
+        `status: ${bare(res.status, /^[a-z]{1,16}$/)}`,
         `asked for: ${input.amount} ${sym} on ${getChain(chain).name}`,
-        `note: The owner has been asked on their phone. Poll capline_status with requestId ${res.id}.`,
+        `note: The owner has been asked on their phone. Poll capline_status with requestId ${bare(res.id, ID)}.`,
         'Until it shows released, you do not have these funds. Wait, or continue within your current balance.',
         '',
         POLICY,
@@ -168,7 +177,7 @@ export async function caplineRequest(input: {
     return {
       isError: true,
       text:
-        `Could not file the request with the approval server at ${url}: ${errMsg(e)}\n` +
+        `Could not file the request with the approval server at ${url}: ${delimit(errMsg(e), randomBytes(4).toString('hex'))}\n` +
         'No owner was asked and no funds are coming. Continue within your current balance, or stop and tell the user.\n\n' +
         POLICY,
     };
