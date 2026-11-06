@@ -9,9 +9,10 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
+    "@preflight/capline": "workspace:*",
     "@preflight/core": "workspace:*",
     "@preflight/engine": "workspace:*",
-    "zod": "^3.25.76",
-    "@preflight/gate": "workspace:*"
+    "@preflight/gate": "workspace:*",
+    "zod": "^3.25.76"
   }
 }

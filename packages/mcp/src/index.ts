@@ -13,6 +13,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { MIN_COVERAGE, createStore, runPreflight, type VerdictStore } from '@preflight/engine';
 import { loadRingSecrets } from '@preflight/gate';
 import { z } from 'zod';
+import { caplineRequest, caplineStatus } from './capline.js';
 import { renderList, renderVerdict } from './render.js';
 
 const log = (msg: string) => {
@@ -185,6 +186,58 @@ server.registerTool(
   async ({ limit }) => {
     const verdicts = await store.recent(limit);
     return { content: [{ type: 'text', text: renderList(verdicts) }] };
+  },
+);
+
+const caplineChain = z
+  .enum(['whitechain', 'base'])
+  .describe('Chain the vault is on: whitechain (Whitechain Sepolia, USDT) or base (Base, USDC).');
+const evmAddress = z.string().regex(/^0x[a-fA-F0-9]{40}$/, 'must be a 20-byte hex address');
+
+server.registerTool(
+  'capline_status',
+  {
+    title: 'Capline status',
+    description:
+      'Show your spending limits under Capline: the tranche left in your wallet, what the vault ' +
+      'still holds for you, whether the owner has dropped (frozen) refills, and the vault nonce. ' +
+      'Pass requestId to see whether the owner has answered a capline_request.',
+    inputSchema: {
+      chain: caplineChain,
+      agent: evmAddress.optional().describe('Agent wallet. Defaults to CAPLINE_AGENT_ADDRESS.'),
+      requestId: z.string().optional().describe('The id returned by capline_request.'),
+    },
+  },
+  async (input) => {
+    const res = await caplineStatus(input);
+    log(`capline_status ${input.chain} ${input.requestId ?? ''}${res.isError ? ' failed' : ''}`);
+    return { isError: res.isError, content: [{ type: 'text', text: res.text }] };
+  },
+);
+
+server.registerTool(
+  'capline_request',
+  {
+    title: 'Capline refill request',
+    description:
+      'Ask the owner for more funds when your wallet tranche is too small for the task. The ' +
+      'owner reviews the request and your recent on-chain spending on their phone and approves ' +
+      'with Face ID, or declines. This does not move money by itself. Poll capline_status ' +
+      'with the returned requestId.',
+    inputSchema: {
+      chain: caplineChain,
+      amount: z
+        .string()
+        .regex(/^\d+(\.\d+)?$/, 'a positive decimal in token units, e.g. "5"')
+        .describe('How much to ask for, in token units (e.g. "5" for 5 USDT).'),
+      reason: z.string().min(1).max(500).describe('Why you need it, in one or two sentences.'),
+      counterparty: evmAddress.optional().describe('Who you intend to pay, if known.'),
+    },
+  },
+  async (input) => {
+    const res = await caplineRequest(input);
+    log(`capline_request ${input.chain} ${input.amount}${res.isError ? ' failed' : ''}`);
+    return { isError: res.isError, content: [{ type: 'text', text: res.text }] };
   },
 );
 
