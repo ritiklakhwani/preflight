@@ -20,6 +20,22 @@ contract MockUSDT is ERC20 {
     }
 }
 
+/// Takes 1% on every transfer, to check the vault credits what actually arrived.
+contract FeeToken is ERC20 {
+    constructor() ERC20("Fee", "FEE") {}
+
+    function mint(address to, uint256 amount) external {
+        _mint(to, amount);
+    }
+
+    function _update(address from, address to, uint256 value) internal override {
+        if (from == address(0) || to == address(0)) return super._update(from, to, value);
+        uint256 fee = value / 100;
+        super._update(from, address(0xFEE), fee);
+        super._update(from, to, value - fee);
+    }
+}
+
 contract CaplineVaultTest is Test {
     uint256 constant N = 0xFFFFFFFF00000000FFFFFFFFFFFFFFFFBCE6FAADA7179E84F3B9CAC2FC632551;
     uint256 constant OWNER_PK = 0xA11CE;
@@ -297,6 +313,91 @@ contract CaplineVaultTest is Test {
         WebAuthn.WebAuthnAuth memory auth = _sign(vault.withdrawDigest(agent, to, 11e6, 0, expiry));
         vm.expectRevert(CaplineVault.InsufficientBalance.selector);
         vault.withdraw(agent, to, 11e6, expiry, auth);
+    }
+
+    // ------------------------------------------------------------ security properties
+
+    function test_feeOnTransfer_creditsWhatArrived() public {
+        FeeToken fee = new FeeToken();
+        fee.mint(funder, 110e6);
+        vm.startPrank(funder);
+        fee.approve(address(vault), type(uint256).max);
+        vault.register(agent, qx, qy, address(fee), 100e6);
+        vault.deposit(agent, 10e6);
+        vm.stopPrank();
+        // 1% lost on each pull: the vault can never owe more than it holds
+        assertEq(vault.getAgent(agent).balance, 99e6 + 9.9e6);
+        assertEq(fee.balanceOf(address(vault)), vault.getAgent(agent).balance);
+    }
+
+    function test_release_highSRejected() public {
+        _register(100e6);
+        uint64 expiry = uint64(block.timestamp + 900);
+        WebAuthn.WebAuthnAuth memory auth = _sign(vault.releaseDigest(agent, 5e6, 0, expiry, 0));
+        auth.s = bytes32(N - uint256(auth.s)); // same signature, malleated
+        vm.expectRevert(CaplineVault.BadSignature.selector);
+        vault.release(agent, 5e6, expiry, 0, auth);
+    }
+
+    function test_dropSignatureIsNotAnUndrop() public {
+        _register(100e6);
+        uint64 expiry = uint64(block.timestamp + 900);
+        WebAuthn.WebAuthnAuth memory auth = _sign(vault.dropDigest(agent, 0, expiry));
+        vm.expectRevert(CaplineVault.BadSignature.selector);
+        vault.undrop(agent, expiry, auth);
+    }
+
+    function test_release_otherVaultSignatureRejected() public {
+        CaplineVault other = new CaplineVault();
+        _register(100e6);
+        vm.startPrank(funder);
+        usdt.approve(address(other), 100e6);
+        other.register(agent, qx, qy, address(usdt), 100e6);
+        vm.stopPrank();
+        uint64 expiry = uint64(block.timestamp + 900);
+        WebAuthn.WebAuthnAuth memory auth = _sign(other.releaseDigest(agent, 5e6, 0, expiry, 0));
+        vm.expectRevert(CaplineVault.BadSignature.selector);
+        vault.release(agent, 5e6, expiry, 0, auth);
+    }
+
+    function test_drop_invalidatesOutstandingRelease() public {
+        _register(100e6);
+        uint64 expiry = uint64(block.timestamp + 900);
+        WebAuthn.WebAuthnAuth memory rel = _sign(vault.releaseDigest(agent, 5e6, 0, expiry, 0));
+        _drop();
+        uint64 e2 = uint64(block.timestamp + 900);
+        vault.undrop(agent, e2, _sign(vault.undropDigest(agent, 1, e2)));
+        // the release signed before the drop is dead even after undrop
+        vm.expectRevert(CaplineVault.BadSignature.selector);
+        vault.release(agent, 5e6, expiry, 0, rel);
+    }
+
+    /// Documents why the phone must check the request nonce against the chain:
+    /// the vault accepts a signature for any future nonce once the counter gets
+    /// there, including after a drop and undrop.
+    function test_futureNonceSignature_landsLater() public {
+        _register(100e6);
+        uint64 expiry = uint64(block.timestamp + 900);
+        WebAuthn.WebAuthnAuth memory rel = _sign(vault.releaseDigest(agent, 5e6, 2, expiry, 0));
+        vm.expectRevert(CaplineVault.BadSignature.selector);
+        vault.release(agent, 5e6, expiry, 0, rel);
+        _drop();
+        vault.undrop(agent, expiry, _sign(vault.undropDigest(agent, 1, expiry)));
+        vault.release(agent, 5e6, expiry, 0, rel);
+        assertEq(usdt.balanceOf(agent), 5e6);
+    }
+
+    /// Documents the squatting property: registration is first come, first
+    /// served, and binds whatever passkey the caller names. The squatter gains
+    /// nothing the owner put in unless someone later deposits to that slot.
+    function test_register_squatBlocksOwner() public {
+        (uint256 x, uint256 y) = vm.publicKeyP256(OTHER_PK);
+        vm.prank(makeAddr("squatter"));
+        vault.register(agent, bytes32(x), bytes32(y), address(usdt), 0);
+        vm.prank(funder);
+        vm.expectRevert(CaplineVault.AlreadyRegistered.selector);
+        vault.register(agent, qx, qy, address(usdt), 10e6);
+        assertEq(usdt.balanceOf(address(vault)), 0);
     }
 
     // ------------------------------------------------------------ digests and demo sink
