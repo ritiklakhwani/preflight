@@ -1,0 +1,17 @@
+{
+  "name": "@preflight/trader-base",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node --env-file-if-exists=../../.env --import tsx src/index.ts",
+    "dry-run": "DRY_RUN=1 node --env-file-if-exists=../../.env --import tsx src/index.ts",
+    "check": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.65.0",
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@preflight/capline": "workspace:*",
+    "viem": "^2.57.16"
+  }
+}
