@@ -123,7 +123,9 @@ app.post('/api/requests', async (c) => {
     throw new HttpError(502, `Could not read the agent from the vault: ${readableError(err)}`);
   });
   if (state.dropped) throw new HttpError(409, 'Agent is dropped. The owner must undrop it first.');
-  if (state.balance < BigInt(amount)) throw new HttpError(409, 'The vault does not hold enough for this amount.');
+  // No balance check here: an oversized ask (the injected 500 USDT) must still
+  // reach the owner so they can see it and decline. The vault reverts
+  // InsufficientBalance if one is ever approved.
 
   const [receipts, counterparty] = await Promise.all([
     buildReceipts({ chain, agent }).catch((err: unknown) => {
@@ -189,28 +191,30 @@ app.get('/api/requests/:id', (c) => {
 app.post('/api/requests/:id/approve', async (c) => {
   const r = store.get(c.req.param('id'));
   if (!r) throw new HttpError(404, 'No such request');
+  const body = (await c.req.json().catch(() => null)) as { auth?: unknown } | null;
+  // Status checks after the await: a second tap may have claimed it meanwhile.
   if (r.status === 'released') return c.json({ txHash: r.txHash });
   if (r.status !== 'pending') throw new HttpError(409, `Request is ${r.status}`);
-  const body = (await c.req.json().catch(() => null)) as { auth?: unknown } | null;
   const auth = parseAuth(body?.auth);
   if (!challengeMatches(auth.clientDataJSON, r.digest)) {
     throw new HttpError(400, 'The passkey signed a different message than this request.');
   }
   const key = relayerKey();
 
-  // Another signed action since creation means this digest can never verify.
-  const state = await readAgent(r.chain, r.agent);
-  if (Number(state.nonce) !== r.nonce) {
-    r.status = 'expired';
-    r.error = 'Superseded: the vault nonce moved since this request was made.';
-    store.put(r);
-    throw new HttpError(409, r.error);
-  }
-
+  // Claim synchronously, before any await, so concurrent approves cannot both
+  // relay and a losing relay cannot overwrite 'released' with 'pending'.
   r.status = 'approved';
   delete r.error;
   store.put(r);
   try {
+    // Another signed action since creation means this digest can never verify.
+    const state = await readAgent(r.chain, r.agent);
+    if (Number(state.nonce) !== r.nonce) {
+      r.status = 'expired';
+      r.error = 'Superseded: the vault nonce moved since this request was made.';
+      store.put(r);
+      throw new HttpError(409, r.error);
+    }
     const txHash = await submitRelease(r.chain, key, {
       agent: r.agent,
       amount: BigInt(r.amount),
@@ -223,8 +227,9 @@ app.post('/api/requests/:id/approve', async (c) => {
     store.put(r);
     return c.json({ txHash });
   } catch (err) {
+    if (err instanceof HttpError) throw err;
     // Back to pending so the owner can retry while the request is still live.
-    r.status = now() > r.expiry ? 'expired' : 'pending';
+    if (r.status === 'approved') r.status = now() > r.expiry ? 'expired' : 'pending';
     r.error = readableError(err);
     store.put(r);
     throw new HttpError(502, r.error);
