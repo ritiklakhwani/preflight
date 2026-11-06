@@ -21,7 +21,7 @@
  * Never registers the real payer agent; that slot is kept for the phone.
  */
 import { spawn } from 'node:child_process';
-import { createHash, generateKeyPairSync, randomBytes, sign, type KeyObject } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -44,19 +44,17 @@ import {
   walletBalance,
   walletClient,
   withdrawDigest,
-  authFromJson,
   type WebAuthnAuth,
 } from '../packages/capline/src/index.js';
 import { buildReceipts } from '../packages/receipts/src/index.js';
-import { P256_HALF_N, base64urlEncode, buildAuth, hexToBytes, spkiToXY } from '../apps/approve/web/src/webauthn.js';
+import { P256_HALF_N } from '../apps/approve/web/src/webauthn.js';
 import { revertName } from '../apps/approve/server/src/errors.js';
+import { ORIGIN, RP_ID, SoftwarePasskey } from './lib/soft-passkey.js';
 
 type Hex = `0x${string}`;
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const CHAIN = 'whitechain' as const;
-const RP_ID = 'ritiklakhwani.github.io';
-const ORIGIN = `https://${RP_ID}`;
 const PARTNER_SINK: Hex = '0x4FECAE863ef2A0c64e211336C2bFCc822165c98a';
 const REAL_PAYER_AGENT = '0xd541a082dfb023f7cad286458977a7f9b4a1778d';
 
@@ -98,52 +96,6 @@ function envKey(name: string): Hex {
   const v = process.env[name];
   if (!v) throw new Error(`${name} is not set in .env`);
   return (v.startsWith('0x') ? v : `0x${v}`) as Hex;
-}
-
-// ------------------------------------------------------------------ software passkey
-
-const sha256 = (data: Uint8Array | string) => createHash('sha256').update(data).digest();
-
-/** A P-256 key that signs WebAuthn assertions the way a phone passkey does. */
-class SoftwarePasskey {
-  readonly qx: Hex;
-  readonly qy: Hex;
-  private readonly privateKey: KeyObject;
-  private counter = 0;
-
-  constructor(
-    readonly rpId: string,
-    readonly origin: string,
-  ) {
-    const { publicKey, privateKey } = generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
-    this.privateKey = privateKey;
-    // Same path as the phone: SPKI DER from the authenticator, x || y is the tail.
-    ({ qx: this.qx, qy: this.qy } = spkiToXY(new Uint8Array(publicKey.export({ type: 'spki', format: 'der' }))));
-  }
-
-  /** navigator.credentials.get({ challenge: digest, userVerification: 'required' }) */
-  sign(digest: Hex): WebAuthnAuth {
-    const clientDataJSON = JSON.stringify({
-      type: 'webauthn.get',
-      challenge: base64urlEncode(hexToBytes(digest)),
-      origin: this.origin,
-      crossOrigin: false,
-    });
-    const counter = Buffer.alloc(4);
-    counter.writeUInt32BE(++this.counter);
-    const flags = Buffer.from([0x05]); // UP | UV: user present and verified (Face ID / PIN)
-    const authenticatorData = Buffer.concat([sha256(this.rpId), flags, counter]);
-    // ES256: ECDSA P-256 over SHA-256, DER encoded, either s half (browsers do not normalise).
-    const signature = sign('sha256', Buffer.concat([authenticatorData, sha256(clientDataJSON)]), this.privateKey);
-    // From here on this is exactly the phone's code (apps/approve/web/src/webauthn.ts).
-    return authFromJson(
-      buildAuth({
-        signature: new Uint8Array(signature),
-        authenticatorData: new Uint8Array(authenticatorData),
-        clientDataJSON: new TextEncoder().encode(clientDataJSON),
-      }),
-    );
-  }
 }
 
 // ------------------------------------------------------------------ approval server
