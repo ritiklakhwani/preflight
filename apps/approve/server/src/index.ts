@@ -2,7 +2,7 @@
 // pushes a notification and relays owner-signed messages. The vault verifies
 // every signature itself, so nothing here can move funds on its own.
 import { randomBytes } from 'node:crypto';
-import { existsSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync } from 'node:fs';
 import { join, relative, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { serve } from '@hono/node-server';
@@ -13,6 +13,7 @@ import { isAddress, getAddress, type Hex } from 'viem';
 import {
   agentStateToJson,
   authFromJson,
+  authToJson,
   readAgent,
   requireVault,
   releaseDigest,
@@ -39,14 +40,29 @@ const now = () => Math.floor(Date.now() / 1000);
 const isChain = (c: unknown): c is ChainKey => typeof c === 'string' && (CHAINS as string[]).includes(c);
 
 class HttpError extends Error {
-  constructor(public status: 400 | 404 | 409 | 502 | 503, message: string) {
+  constructor(public status: 400 | 404 | 409 | 424, message: string) {
     super(message);
+  }
+}
+
+/**
+ * Keeps the exact assertion of a relay that failed, so a rejected signature can
+ * be replayed against the vault offline. All public: a signature over a digest
+ * anyone may relay anyway.
+ */
+function recordFailedAuth(id: string, digest: string, auth: WebAuthnAuth, error: string): void {
+  try {
+    const file = join(dirname(store.DATA_FILE), 'failed-auths.jsonl');
+    mkdirSync(dirname(file), { recursive: true });
+    appendFileSync(file, JSON.stringify({ at: now(), id, digest, error, auth: authToJson(auth) }) + '\n');
+  } catch {
+    // Debug aid only; never block the response on it.
   }
 }
 
 function relayerKey(): Hex {
   const key = process.env.RELAYER_PRIVATE_KEY || process.env.DEPLOYER_PRIVATE_KEY;
-  if (!key) throw new HttpError(503, 'No relayer key on the server. Use direct mode on the phone.');
+  if (!key) throw new HttpError(424, 'No relayer key on the server. Use direct mode on the phone.');
   return (key.startsWith('0x') ? key : `0x${key}`) as Hex;
 }
 
@@ -120,7 +136,7 @@ app.post('/api/requests', async (c) => {
     : parseAgent(body.counterparty);
 
   const state = await readAgent(chain, agent).catch((err: unknown) => {
-    throw new HttpError(502, `Could not read the agent from the vault: ${readableError(err)}`);
+    throw new HttpError(424, `Could not read the agent from the vault: ${readableError(err)}`);
   });
   if (state.dropped) throw new HttpError(409, 'Agent is dropped. The owner must undrop it first.');
   // No balance check here: an oversized ask (the injected 500 USDT) must still
@@ -129,7 +145,7 @@ app.post('/api/requests', async (c) => {
 
   const [receipts, counterparty] = await Promise.all([
     buildReceipts({ chain, agent }).catch((err: unknown) => {
-      throw new HttpError(502, `Could not build Receipts: ${readableError(err)}`);
+      throw new HttpError(424, `Could not build Receipts: ${readableError(err)}`);
     }),
     counterpartyAddr
       ? scoreCounterparty(chain, counterpartyAddr)
@@ -232,7 +248,8 @@ app.post('/api/requests/:id/approve', async (c) => {
     if (r.status === 'approved') r.status = now() > r.expiry ? 'expired' : 'pending';
     r.error = readableError(err);
     store.put(r);
-    throw new HttpError(502, r.error);
+    recordFailedAuth(r.id, r.digest, auth, r.error);
+    throw new HttpError(424, r.error);
   }
 });
 
@@ -256,7 +273,7 @@ async function relayFlag(kind: 'drop' | 'undrop', agentParam: string, body: Reco
   try {
     return await submit(body.chain, key, { agent, expiry: BigInt(expiry), auth });
   } catch (err) {
-    throw new HttpError(502, readableError(err));
+    throw new HttpError(424, readableError(err));
   }
 }
 
@@ -278,7 +295,7 @@ app.get('/api/agents/:agent', async (c) => {
     const [state, wallet] = await Promise.all([readAgent(chain, agent), walletBalance(chain, agent)]);
     return c.json(agentStateToJson(chain, agent, state, wallet));
   } catch (err) {
-    throw new HttpError(502, readableError(err));
+    throw new HttpError(424, readableError(err));
   }
 });
 
