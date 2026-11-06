@@ -129,3 +129,39 @@ export function challengeMatches(clientDataJSON: string, digest: Hex): boolean {
     return false;
   }
 }
+
+/**
+ * Checks an assertion against a P-256 public key with WebCrypto, the same
+ * maths the vault runs (sha256(authenticatorData || sha256(clientDataJSON))).
+ * Lets the phone tell "wrong key" apart from "vault rejected it" before sending.
+ */
+export async function verifyAssertion(
+  auth: Pick<WebAuthnAuthJson, 'r' | 's' | 'authenticatorData' | 'clientDataJSON'>,
+  qx: Hex,
+  qy: Hex,
+): Promise<boolean> {
+  const point = new Uint8Array(65);
+  point[0] = 0x04;
+  point.set(hexToBytes(qx), 1);
+  point.set(hexToBytes(qy), 33);
+  const key = await crypto.subtle.importKey('raw', point, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['verify']);
+  const authData = hexToBytes(auth.authenticatorData);
+  const clientHash = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(auth.clientDataJSON)));
+  const signed = new Uint8Array(authData.length + 32);
+  signed.set(authData);
+  signed.set(clientHash, authData.length);
+  const sig = new Uint8Array(64);
+  sig.set(hexToBytes(auth.r));
+  sig.set(hexToBytes(auth.s), 32);
+  return crypto.subtle.verify({ name: 'ECDSA', hash: 'SHA-256' }, key, sig, signed);
+}
+
+/** Byte 32 of authenticatorData: UP, UV, BE, BS bits the vault checks. */
+export function flagProblem(authenticatorData: Hex): string | undefined {
+  const f = hexToBytes(authenticatorData)[32];
+  if (f === undefined) return 'Authenticator data is too short.';
+  if (!(f & 0x01)) return 'The passkey did not confirm user presence.';
+  if (!(f & 0x04)) return 'The passkey did not verify you (Face ID or passcode). The vault requires it.';
+  if (f & 0x10 && !(f & 0x08)) return 'The passkey reported an invalid backup state.';
+  return undefined;
+}

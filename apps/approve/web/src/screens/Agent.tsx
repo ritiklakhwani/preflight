@@ -118,7 +118,7 @@ export function AgentScreen({ chain, agent }: { chain: ChainKey; agent: `0x${str
       const expiry = Math.floor(Date.now() / 1000) + SIGN_WINDOW;
       const make = kind === 'drop' ? dropDigest : undropDigest;
       const digest = make({ chain, vault: requireVault(chain), agent, nonce: view.nonce, expiry });
-      const auth = await signDigest(digest, passkey.credentialId);
+      const auth = await signDigest(digest, passkey);
       if (server === 'online') {
         try {
           const { txHash } = await api.setDropped(kind, chain, agent, expiry, auth);
@@ -285,7 +285,7 @@ function DirectRelease({
         expiry,
         receiptsHash,
       });
-      const auth = await signDigest(digest, passkey.credentialId);
+      const auth = await signDigest(digest, passkey);
       setSigned({ kind: 'release', amount: units, expiry, receiptsHash, auth });
     } catch (e) {
       setErr(passkeyError(e));

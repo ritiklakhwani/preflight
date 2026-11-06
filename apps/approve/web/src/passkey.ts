@@ -2,7 +2,17 @@
 // them: Safari drops the user gesture otherwise and refuses Face ID.
 import { authFromJson, type WebAuthnAuth } from '@preflight/capline';
 import { setPasskey, type StoredPasskey } from './storage.js';
-import { base64urlDecode, base64urlEncode, buildAuth, challengeMatches, hexToBytes, spkiToXY, type Hex } from './webauthn.js';
+import {
+  base64urlDecode,
+  base64urlEncode,
+  buildAuth,
+  challengeMatches,
+  flagProblem,
+  hexToBytes,
+  spkiToXY,
+  verifyAssertion,
+  type Hex,
+} from './webauthn.js';
 
 export const passkeySupported = () =>
   typeof window !== 'undefined' && !!window.PublicKeyCredential && !!navigator.credentials;
@@ -44,7 +54,11 @@ export async function createPasskey(): Promise<StoredPasskey> {
 }
 
 /** Face ID over the 32-byte EIP-712 digest; returns the auth the vault checks. */
-export async function signDigest(digest: Hex, credentialId: string): Promise<WebAuthnAuth> {
+export async function signDigest(
+  digest: Hex,
+  passkey: Pick<StoredPasskey, 'credentialId' | 'qx' | 'qy'>,
+): Promise<WebAuthnAuth> {
+  const { credentialId } = passkey;
   if (!passkeySupported()) throw new Error('This browser has no passkey support.');
   const cred = (await navigator.credentials.get({
     publicKey: {
@@ -62,6 +76,17 @@ export async function signDigest(digest: Hex, credentialId: string): Promise<Web
     clientDataJSON: new Uint8Array(res.clientDataJSON),
   });
   if (!challengeMatches(json.clientDataJSON, digest)) throw new Error('The passkey signed something else. Not sent.');
+  const flags = flagProblem(json.authenticatorData);
+  if (flags) throw new Error(`${flags} Not sent.`);
+  // Same check the vault runs, against the key this phone registered. A miss
+  // here means the stored key is not the one that signed, so say that plainly.
+  let ok = false;
+  try {
+    ok = await verifyAssertion(json, passkey.qx, passkey.qy);
+  } catch {
+    ok = true; // WebCrypto unavailable or picky: let the vault be the judge.
+  }
+  if (!ok) throw new Error('This signature does not match the passkey key saved on this phone. Not sent.');
   return authFromJson(json);
 }
 

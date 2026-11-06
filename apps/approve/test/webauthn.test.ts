@@ -6,13 +6,16 @@ import {
   base64urlEncode,
   bigintTo32,
   buildAuth,
+  bytesToHex,
   challengeMatches,
   clientDataIndices,
   derToRS,
+  flagProblem,
   hexToBytes,
   normaliseS,
   parseDerSignature,
   spkiToXY,
+  verifyAssertion,
 } from '../web/src/webauthn.js';
 
 const { privateKey, publicKey } = generateKeyPairSync('ec', { namedCurve: 'P-256' });
@@ -109,5 +112,45 @@ describe('SPKI public key', () => {
     const { qx, qy } = spkiToXY(spki);
     expect(Buffer.from(hexToBytes(qx)).toString('base64url')).toBe(jwk.x);
     expect(Buffer.from(hexToBytes(qy)).toString('base64url')).toBe(jwk.y);
+  });
+});
+
+describe('verifyAssertion (phone self-check)', () => {
+  async function fixture() {
+    const kp = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify']);
+    const raw = new Uint8Array(await crypto.subtle.exportKey('raw', kp.publicKey));
+    const qx = bytesToHex(raw.slice(1, 33));
+    const qy = bytesToHex(raw.slice(33));
+    const authData = new Uint8Array(37);
+    authData[32] = 0x1d; // UP, UV, BE, BS: what an iCloud passkey sends
+    const clientDataJSON = '{"type":"webauthn.get","challenge":"abc","origin":"https://example.org"}';
+    const ch = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(clientDataJSON)));
+    const msg = new Uint8Array(69);
+    msg.set(authData);
+    msg.set(ch, 37);
+    const sig = new Uint8Array(await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, kp.privateKey, msg));
+    const auth = {
+      r: bytesToHex(sig.slice(0, 32)),
+      s: bytesToHex(sig.slice(32)),
+      authenticatorData: bytesToHex(authData),
+      clientDataJSON,
+    };
+    return { auth, qx, qy };
+  }
+
+  it('accepts a signature from the stored key', async () => {
+    const { auth, qx, qy } = await fixture();
+    expect(await verifyAssertion(auth, qx, qy)).toBe(true);
+  });
+
+  it('rejects a signature from a different key', async () => {
+    const a = await fixture();
+    const b = await fixture();
+    expect(await verifyAssertion(a.auth, b.qx, b.qy)).toBe(false);
+  });
+
+  it('flags a missing user-verification bit', () => {
+    expect(flagProblem(`0x${'00'.repeat(32)}01${'00'.repeat(4)}`)).toMatch(/Face ID/);
+    expect(flagProblem(`0x${'00'.repeat(32)}1d${'00'.repeat(4)}`)).toBeUndefined();
   });
 });

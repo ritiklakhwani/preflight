@@ -26,6 +26,8 @@ export function RequestScreen({ id }: { id: string }) {
   const [actionErr, setActionErr] = useState<string>();
   // Read straight from the chain, not the server: the nonce goes into the digest.
   const [chainView, setChainView] = useState<ChainView>();
+  // The owner key the vault holds for this agent, to catch a wrong passkey before Face ID.
+  const [ownerKey, setOwnerKey] = useState<{ qx: string; qy: string }>();
   const now = useNow();
   const { state: server } = useServer();
   const passkey = getPasskey();
@@ -38,7 +40,10 @@ export function RequestScreen({ id }: { id: string }) {
         rememberAgent({ chain: r.chain, agent: r.agent });
         if (r.status === 'pending') {
           readAgent(r.chain, r.agent).then(
-            (s) => setChainView({ nonce: s.nonce, dropped: s.dropped, balance: s.balance, lastReleaseBlock: s.lastReleaseBlock }),
+            (s) => {
+              setChainView({ nonce: s.nonce, dropped: s.dropped, balance: s.balance, lastReleaseBlock: s.lastReleaseBlock });
+              setOwnerKey({ qx: s.qx, qy: s.qy });
+            },
             () => {}, // keep the last good read; with none, the screen says the nonce is unconfirmed
           );
         }
@@ -89,7 +94,11 @@ export function RequestScreen({ id }: { id: string }) {
 
   const left = req.expiry - now;
   const live = req.status === 'pending' && left > 0;
-  const canApprove = live && !!passkey && !!check?.ok && !!check.digest && !busy;
+  const wrongKey =
+    !!passkey &&
+    !!ownerKey &&
+    (ownerKey.qx.toLowerCase() !== passkey.qx.toLowerCase() || ownerKey.qy.toLowerCase() !== passkey.qy.toLowerCase());
+  const canApprove = live && !!passkey && !wrongKey && !!check?.ok && !!check.digest && !busy;
 
   const approve = async () => {
     if (!passkey || !check?.ok || !check.digest) return;
@@ -98,7 +107,7 @@ export function RequestScreen({ id }: { id: string }) {
     setBusy('approve');
     try {
       // signDigest is the first await: Safari needs Face ID to start from the tap.
-      const auth = await signDigest(digest, passkey.credentialId);
+      const auth = await signDigest(digest, passkey);
       const { txHash } = await api.approve(req.id, auth);
       setReq({ ...req, status: 'released', txHash });
     } catch (err) {
@@ -244,6 +253,12 @@ export function RequestScreen({ id }: { id: string }) {
         ) : null}
         {req.error && req.status === 'pending' && !actionErr ? <div className="error">{req.error}</div> : null}
         {actionErr ? <div className="error">{actionErr}</div> : null}
+        {wrongKey && live ? (
+          <div className="error">
+            The passkey on this phone (qx {short(passkey!.qx, 6)}) is not the one this agent was registered with (qx{' '}
+            {short(ownerKey!.qx, 6)}). Approving would fail onchain.
+          </div>
+        ) : null}
         {!passkey && live ? (
           <div className="card">
             <p>No passkey on this phone yet.</p>
