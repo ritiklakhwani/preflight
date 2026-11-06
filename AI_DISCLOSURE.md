@@ -8,6 +8,41 @@ who decided what to build. Both are answered plainly below, because a disclosure
 flatters the author invites the reader to check the rest of the submission for the same
 habit.
 
+## ETHGlobal Mumbai 2026: Preflight Capline
+
+**Claude Code (Claude Opus 5.5)**, used throughout the weekend of 2026-11-06 to 2026-11-07.
+The same split applies as at ETHOnline: the model wrote most of the code, the author decided
+what to build and checked it.
+
+| Area | How it was produced |
+|---|---|
+| Workspace scaffolding for `contracts/`, `apps/`, `agents/` | Model-drafted |
+| `CaplineVault.sol`, its deploy scripts and the forge tests | Model-drafted |
+| `packages/capline` and `packages/receipts`, the client libraries | Model-drafted |
+| MCP tools `capline_status` and `capline_request` | Model-drafted |
+| `apps/approve`, the approval server and the phone app | Model-drafted |
+| `apps/merchant` and both demo agents in `agents/` | Model-drafted |
+| The engine fix to read the most-traded pool | Model-drafted |
+| Research: prior projects, partner docs, precompile availability | Model-run, read and checked by the author |
+| Documentation, including this section | Model-drafted, corrected by the author where wrong |
+
+**The author's calls.** The idea, the partners, the design and the review:
+
+- Extending Preflight on the Continuity track and staying in agent security.
+- Skipping partners that people at the event described as crowded.
+- Choosing Whitechain, Definitive and the EF CROPS upgrade as the three partners.
+- Dropping the original working name once a showcase search found about ten projects using it,
+  choosing "Capline", and leading the pitch with receipts rather than the cap.
+- The design: tranches held in a vault, a passkey on the owner's phone instead of an owner
+  key, and an approval that commits to the receipts the owner saw.
+- Reviewing the code and what it did on chain before each commit.
+
+**Runtime use this weekend.** The paying agent's `llm` mode is driven by a Claude model. That
+is the agent under test, not part of the safety decision: the vault releases nothing without
+the owner's passkey signature, whatever the agent says.
+
+The sections below cover ETHOnline 2026.
+
 ## Tool used
 
 **Claude Code (Claude Opus 5)**, used throughout, as a pair-programming and research
