@@ -60,3 +60,6 @@ Partners: Whitechain (Continuity), Definitive (Continuity), Ethereum Foundation
 | 2026-11-06 | Receipts builder: Whitechain via Blockscout and RPC, Base via the Preflight engine |
 | 2026-11-06 | Pocket Approve server and phone app, merchant API, paying agent, Flash trading agent |
 | 2026-11-06 | Preflight engine fix: market signals use the most-traded pool, so priced-up junk pools no longer flag WETH on Base |
+| 2026-11-06 | CaplineVault deployed and verified on Whitechain; first USDT payments from the agent to the merchant settle onchain |
+| 2026-11-06 | End-to-end passkey release on Whitechain (`pnpm test:e2e`) and a rehearsal of both demo flows (`scripts/rehearse.ts`) |
+| 2026-11-06 | Security pass: the phone reads the nonce from chain, caps expiry and builds its own digest; receipts mismatch blocks Approve |
