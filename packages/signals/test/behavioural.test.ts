@@ -142,6 +142,42 @@ describe('liquidity-reality', () => {
     expect(r.fired).toBe(false);
   });
 
+  it('does not fire on a heavily traded token whose largest pool is a mispriced junk pair', async () => {
+    // WETH on Base, measured 2026-11-06. A junk counterparty's absurd price
+    // makes WETH/(junk) report $34B across 6 transactions, ranked above
+    // WETH/USDC at $155m and 10.8m transactions. It scored HIGH 85. The
+    // second junk pool, young here, clears the dormant bar but must not
+    // become the reference.
+    const pools = [
+      pool({ totalValueLockedUSD: 33_998_209_976, txCount: 6, volumeUSD: 208, createdAtTimestamp: now() - 979 * DAY }),
+      pool({ id: '0x00000000000000000000000000000000000000p3', totalValueLockedUSD: 15_853_065_944, txCount: 96, createdAtTimestamp: now() - DAY }),
+      pool({ id: '0x00000000000000000000000000000000000000p2', totalValueLockedUSD: 154_701_775, txCount: 10_828_626 }),
+    ];
+    const ctx = context({
+      holders: { status: 'error', error: 'chain not covered' },
+      market: market({ pools, txCount: 497_991_201 }),
+    });
+    expect((await liquidityReality.run(ctx)).fired).toBe(false);
+    expect((await poolAge.run(ctx)).fired).toBe(false);
+    expect((await thinLiquidity.run(ctx)).fired).toBe(false);
+  });
+
+  it('still fires when the only traded pool is too small to be a real market', async () => {
+    // A dormant fabricated pool cannot be excused by a dust pool beside it.
+    const r = await liquidityReality.run(
+      context({
+        holders: thinlyHeld,
+        market: market({
+          pools: [
+            pool({ totalValueLockedUSD: 1_110_167_010_696, txCount: 4, volumeUSD: 0 }),
+            pool({ id: '0x00000000000000000000000000000000000000p2', totalValueLockedUSD: 500, txCount: 40 }),
+          ],
+        }),
+      }),
+    );
+    expect(r.fired).toBe(true);
+  });
+
   it('does not fire on a young quiet pool, which is pool-age territory', async () => {
     const r = await liquidityReality.run(
       context({

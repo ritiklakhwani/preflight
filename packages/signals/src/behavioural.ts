@@ -131,13 +131,13 @@ export const noMarket: Signal = {
     if ('skip' in g) return g.skip;
 
     if (g.pools.length > 0) {
-      const deepest = g.pools[0]!;
+      const deepest = referencePool(g.pools)!;
       return {
         fired: false,
         evidence: [
           {
             label: 'market',
-            value: `${g.pools.length} Uniswap V3 pool(s), deepest holds ${usd(deepest.totalValueLockedUSD)}`,
+            value: `${g.pools.length} Uniswap V3 pool(s), most traded pool holds ${usd(deepest.totalValueLockedUSD)}`,
             link: poolLink(ctx, deepest.id),
           },
         ],
@@ -171,7 +171,7 @@ export const poolAge: Signal = {
   async run(ctx) {
     const g = guardMarket(ctx);
     if ('skip' in g) return g.skip;
-    const deepest = g.pools[0];
+    const deepest = referencePool(g.pools);
     if (!deepest) {
       return {
         fired: false,
@@ -226,6 +226,33 @@ const DORMANT_MIN_TVL = 10_000;
 const DORMANT_MAX_TX = 25;
 const DORMANT_MIN_AGE_DAYS = 7;
 
+/**
+ * The pool the market signals measure against: the most traded pool with
+ * real value in it, falling back to the deepest by reported TVL.
+ *
+ * Ranking by reported TVL alone trusts the other side of the pair. The
+ * subgraph values a pool using the counterparty's derived price, so a junk
+ * token with an absurd price makes its pool look like the deepest market for
+ * whatever it is paired with. WETH on Base, measured 2026-11-06:
+ *
+ *   WETH/(junk)  $34.0B reported         6 transactions
+ *   WETH/USDC    $155m reported  10,828,626 transactions
+ *
+ * Reading the first as WETH's market scored WETH HIGH 85. Ranking traded
+ * pools by TVL was not enough either: WETH/(junk) at $15.9B and 96
+ * transactions came next. Reported TVL is free to fake, transactions cost
+ * gas, so traded pools are ranked by transaction count. A honeypot whose
+ * pools are all dormant still falls through to the deepest.
+ */
+export function referencePool(pools: Pool[]): Pool | undefined {
+  let best: Pool | undefined;
+  for (const p of pools) {
+    if (p.txCount < DORMANT_MAX_TX || p.totalValueLockedUSD < DORMANT_MIN_TVL) continue;
+    if (!best || p.txCount > best.txCount) best = p;
+  }
+  return best ?? pools[0];
+}
+
 export const liquidityReality: Signal = {
   name: 'liquidity-reality',
   weight: 0.85,
@@ -234,7 +261,7 @@ export const liquidityReality: Signal = {
   async run(ctx) {
     const g = guardMarket(ctx);
     if ('skip' in g) return g.skip;
-    const deepest = g.pools[0];
+    const deepest = referencePool(g.pools);
     if (!deepest) {
       return {
         fired: false,
@@ -282,6 +309,17 @@ export const liquidityReality: Signal = {
         link: poolLink(ctx, deepest.id),
       },
     ];
+    // Name an untraded bigger pool that was passed over, so the evidence does
+    // not read as if it was missed. A busy bigger pool needs no excuse.
+    const largest = g.pools[0]!;
+    if (largest !== deepest && largest.txCount < DORMANT_MAX_TX) {
+      evidence.push({
+        label: 'set aside',
+        value: `${largest.token0.symbol}/${largest.token1.symbol} reports ${usd(largest.totalValueLockedUSD)} across ${largest.txCount.toLocaleString('en-US')} transaction(s); that value comes from the counterparty's price, not from trading`,
+        link: poolLink(ctx, largest.id),
+        untrusted: true,
+      });
+    }
     if (widelyHeld && deepest.txCount < DORMANT_MAX_TX) {
       evidence.push({
         label: 'reading',
@@ -321,7 +359,7 @@ export const thinLiquidity: Signal = {
   async run(ctx) {
     const g = guardMarket(ctx);
     if ('skip' in g) return g.skip;
-    const deepest = g.pools[0];
+    const deepest = referencePool(g.pools);
     if (!deepest) {
       return { fired: false, evidence: [{ label: 'depth', value: 'no pool; see no-market' }] };
     }
