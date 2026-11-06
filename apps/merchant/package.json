@@ -1,0 +1,16 @@
+{
+  "name": "@preflight/merchant",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node --env-file-if-exists=../../.env --import tsx src/index.ts",
+    "evil": "MERCHANT_EVIL=1 node --env-file-if-exists=../../.env --import tsx src/index.ts",
+    "check": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@hono/node-server": "^2.1.6",
+    "hono": "^4.13.16",
+    "viem": "^2.57.16"
+  }
+}
