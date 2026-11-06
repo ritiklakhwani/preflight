@@ -26,8 +26,32 @@ export const CHAIN_META: Record<ChainKey, ChainMeta> = {
 
 export const isChainKey = (v: unknown): v is ChainKey => v === 'whitechain' || v === 'base';
 
-/** Empty means same origin (server hosts the PWA, or the Vite dev proxy). */
-export const API_URL: string = (import.meta.env.VITE_API_URL ?? '').replace(/\/$/, '');
+/**
+ * Where the approval server lives. The app is static (GitHub Pages) while the
+ * server sits behind a tunnel whose URL can change, so the push link carries it
+ * as ?api=https://... and the app remembers the last one. Empty means same
+ * origin (server hosts the PWA, or the Vite dev proxy). Only https or localhost
+ * is accepted, and the phone re-derives the digest from chain state anyway, so a
+ * hostile server cannot get a different release signed.
+ */
+function resolveApiUrl(): string {
+  const KEY = 'capline.apiUrl';
+  const ok = (u: string) => /^https:\/\/[^\s/]+/.test(u) || /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?/.test(u);
+  try {
+    const fromLink = new URLSearchParams(window.location.search).get('api');
+    if (fromLink && ok(fromLink)) {
+      localStorage.setItem(KEY, fromLink);
+      return fromLink.replace(/\/$/, '');
+    }
+    const saved = localStorage.getItem(KEY);
+    if (saved && ok(saved)) return saved.replace(/\/$/, '');
+  } catch {
+    // Private mode or no window: fall through to the build-time value.
+  }
+  return (import.meta.env.VITE_API_URL ?? '').replace(/\/$/, '');
+}
+
+export const API_URL: string = resolveApiUrl();
 
 export const txUrl = (chain: ChainKey, hash: string) => `${CHAIN_META[chain].explorer}/tx/${hash}`;
 export const addressUrl = (chain: ChainKey, addr: string) => `${CHAIN_META[chain].explorer}/address/${addr}`;

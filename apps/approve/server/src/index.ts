@@ -75,11 +75,15 @@ async function notify(id: string): Promise<void> {
     return;
   }
   const base = (process.env.APPROVE_PUBLIC_URL ?? `http://localhost:${PORT}`).replace(/\/$/, '');
+  // When the app is hosted apart from this server, the link tells it where to
+  // find us (the tunnel URL can change between runs).
+  const api = process.env.APPROVE_API_URL;
+  const query = api ? `?api=${encodeURIComponent(api)}` : '';
   try {
     // Only the id leaves the server: no amount, no address in the push.
     const res = await fetch(`https://ntfy.sh/${encodeURIComponent(topic)}`, {
       method: 'POST',
-      headers: { Title: 'Capline', Click: `${base}/#/r/${id}`, Tags: 'lock', Priority: 'high' },
+      headers: { Title: 'Capline', Click: `${base}/${query}#/r/${id}`, Tags: 'lock', Priority: 'high' },
       body: 'Agent requests a refill',
     });
     if (!res.ok) console.warn(`[approve] ntfy answered ${res.status}`);
