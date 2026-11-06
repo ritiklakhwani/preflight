@@ -43,6 +43,13 @@ gets more money.
 Partners: Whitechain (Continuity), Definitive (Continuity), Ethereum Foundation
 (CROPS upgrade).
 
+## Deployments
+
+| Contract | Chain | Address |
+|---|---|---|
+| CaplineVault (verified) | Whitechain Sepolia 1874 | [`0x31529ef8ec96f7a1bc5ea0166b3c040b1b95bbee`](https://explorer.testnet.whitechain.io/address/0x31529ef8ec96f7a1bc5ea0166b3c040b1b95bbee) |
+| PartnerSink (demo, left unverified on purpose) | Whitechain Sepolia 1874 | [`0x4FECAE863ef2A0c64e211336C2bFCc822165c98a`](https://explorer.testnet.whitechain.io/address/0x4FECAE863ef2A0c64e211336C2bFCc822165c98a) |
+
 ## Changelog
 
 | Date (IST) | Change |
