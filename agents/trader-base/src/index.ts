@@ -177,7 +177,9 @@ async function main() {
       ? {
           // A buy limit fills at or below its price, so 0.3% above market fills now:
           // a real onchain fill for the demo, still with a hard price cap.
-          limitNotionalPrice: usd(px * 1.003),
+          // Flash v1 takes an attached-bracket entry only as a pair rate (target
+          // per contra). The contra is USDC, so the rate equals the USD price.
+          limitCrossPrice: usd(px * 1.003),
           expireTime: inMinutes(15),
           attachedBracket: {
             takeProfit: { notionalPrice: usd(px * (1 + widths.tp)) },
@@ -187,7 +189,7 @@ async function main() {
         }
       : { limitNotionalPrice: usd(px * (1 - Number(env.LIMIT_DISCOUNT ?? '0.005'))), expireTime: inMinutes(60) }),
   };
-  log(`  limit $${req.limitNotionalPrice}` + (req.attachedBracket
+  log(`  limit $${req.limitNotionalPrice ?? req.limitCrossPrice}` + (req.attachedBracket
     ? `, TP $${req.attachedBracket.takeProfit.notionalPrice} (+${widths.tp * 100}%), SL $${req.attachedBracket.stopLoss.notionalPrice} (-${widths.sl * 100}%) from verdict ${severity.toUpperCase()}`
     : ''));
 
