@@ -67,7 +67,7 @@ if the passkey signature covers exactly the receipts the owner saw.
   AI agent --MCP--> capline_request(amount, reason)
                         |
                         v
-  approval server   Receipts: transfer logs + Flash fills since the last release,
+  approval server   Receipts: transfer logs (and order fills) since the last release,
                     each counterparty scored by Preflight -> receiptsHash
                     push to the phone (request id only)
                         |
@@ -101,7 +101,7 @@ and a dated changelog, is in [docs/MUMBAI.md](./docs/MUMBAI.md).
 | MCP tools `capline_status`, `capline_request` | `packages/mcp/` |
 | Pocket Approve: approval server and phone app | `apps/approve/` |
 | Pay-per-call merchant API, settled in Whitechain USDT | `apps/merchant/` |
-| Paying agent (Whitechain) and trading agent (Base, Flash) | `agents/` |
+| Paying agent (Whitechain) and trading agent (Base) | `agents/` |
 
 One fix to the existing engine: market signals now read the most-traded pool instead of the
 one with the highest reported value, so priced-up junk pools no longer flag WETH on Base
@@ -152,25 +152,19 @@ In plain terms: the phone buzzes, you see what it spent, Face ID.
   amounts and agent addresses. Public RPCs and the Whitechain explorer see the addresses the
   phone and the receipts builder read.
 
-### Definitive Flash
+### Same vault on Base: a trading agent
 
-The trading agent on Base uses Flash as one tool in a longer workflow:
+The vault is chain-agnostic. On Base, a trading agent runs the same loop with USDC:
 
-1. **Preflight:** `preflight_check` on the token over the Preflight MCP server.
-2. **Tranche:** `capline_status`; if short, `capline_request`, and the owner approves the
-   USDC tranche from the phone.
-3. **Advanced order:** one Flash limit buy with an attached take-profit / stop-loss bracket,
-   placed from that tranche. The bracket widths come from the Preflight verdict: a riskier
-   token gets a tighter bracket, and HIGH never trades.
-4. **Receipts:** the fill appears, risk-scored, as a `flash_order` line in the next Receipts
-   screen, and is part of the `receiptsHash` the owner signs for the next tranche.
-
-Funds stay in the agent's wallet until the fill, and Definitive's executors land the
-settlement. `FLASH_VIA_MCP=1` places the order through Definitive's official MCP server
-(`npx -y @definitive-fi/flash-mcp`) instead of the REST client; that server has no attached
-brackets, so that path places the limit entry only. Details: [agents/trader-base](agents/trader-base/README.md).
-
-Onchain fill: TODO (Basescan link once the live order executes).
+1. **Preflight:** `preflight_check` on the token over the Preflight MCP server. WETH comes
+   back CLEAN; a HIGH token is never traded.
+2. **Tranche:** `capline_request`, and the owner approves 10 USDC from the phone with the same
+   passkey. [Released on Base](https://basescan.org/tx/0xe51f0bd3b4b43351d7f49a01c9fee20cce2aae39fd410bb949c260ee5ffbd8bc).
+3. **Order:** the agent then places a limit buy with an attached take-profit / stop-loss
+   bracket through Definitive Flash, with the bracket width set by the Preflight verdict.
+   Order access for our Flash API key was not enabled in time, so no fill is linked and this
+   project is not entered for the Definitive prize. The client is in
+   [agents/trader-base](agents/trader-base/README.md).
 
 ### Prior art
 
@@ -238,7 +232,7 @@ Deploy, verify and register commands: [contracts/README.md](contracts/README.md)
 ### Current limitations
 
 - No real users. This is a hackathon build with demo agents.
-- The live Flash order on Base is not linked yet (TODO above).
+- The Base trading agent stops before its order: Flash order access was not enabled for our key.
 - On Whitechain, Preflight has no Uniswap subgraph, so counterparties are scored from RPC and
   explorer checks (code, age, verified source, deployer) instead of the full engine.
 - Risk-triggered escalation under budget and gasless agent payments are planned, not built.

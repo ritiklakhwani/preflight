@@ -38,10 +38,9 @@ gets more money.
 | Receipts | `packages/receipts/` | What the last tranche bought, rebuilt from chain data, each counterparty risk-scored by Preflight |
 | MCP tools | `packages/mcp/` | `capline_status`, `capline_request`, next to the existing three tools |
 | Pocket Approve | `apps/approve/` | Phone PWA: receipts, Face ID approve, decline, drop |
-| Demo agents | `agents/` | Paying agent on Whitechain (USDT), trading agent on Base (Flash) |
+| Demo agents | `agents/` | Paying agent on Whitechain (USDT), trading agent on Base (USDC) |
 
-Partners: Whitechain (Continuity), Definitive (Continuity), Ethereum Foundation
-(CROPS upgrade).
+Partners: Whitechain (Continuity) and Ethereum Foundation (CROPS upgrade).
 
 ## Deployments
 
@@ -67,3 +66,4 @@ Partners: Whitechain (Continuity), Definitive (Continuity), Ethereum Foundation
 | 2026-11-07 | Real-phone approval on Whitechain: Face ID release of 5 USDT to the paying agent ([tx](https://explorer.testnet.whitechain.io/tx/0x6407088ce5c0d09665072b1ee460dc7f52189f8e3860ad8be0780d863aebcce1)) |
 | 2026-11-07 | Phone checks its passkey against the vault's owner key and can recover the right one; tunnel no longer masks relay errors |
 | 2026-11-07 | CaplineVault deployed and verified on Base; trading agent registered with a 15 USDC budget |
+| 2026-11-07 | Trading agent on Base: Preflight CLEAN on WETH, Face ID release of 10 USDC ([tx](https://basescan.org/tx/0xe51f0bd3b4b43351d7f49a01c9fee20cce2aae39fd410bb949c260ee5ffbd8bc)); Definitive not entered (order access not enabled) |
