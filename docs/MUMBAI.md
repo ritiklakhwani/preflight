@@ -67,3 +67,4 @@ Partners: Whitechain (Continuity) and Ethereum Foundation (CROPS upgrade).
 | 2026-11-07 | Phone checks its passkey against the vault's owner key and can recover the right one; tunnel no longer masks relay errors |
 | 2026-11-07 | CaplineVault deployed and verified on Base; trading agent registered with a 15 USDC budget |
 | 2026-11-07 | Trading agent on Base: Preflight CLEAN on WETH, Face ID release of 10 USDC ([tx](https://basescan.org/tx/0xe51f0bd3b4b43351d7f49a01c9fee20cce2aae39fd410bb949c260ee5ffbd8bc)); Definitive not entered (order access not enabled) |
+| 2026-11-07 | Backend-off release from the real phone with the server stopped ([tx](https://explorer.testnet.whitechain.io/tx/0xd7938f7d28196e3a85e6286ae6db3376a82a76818ebe9ab9dd5b5eed4d3e1078)) |

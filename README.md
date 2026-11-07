@@ -134,6 +134,10 @@ gas-only key, or shows the signed payload for anyone to relay.
 
 In plain terms: the phone buzzes, you see what it spent, Face ID.
 
+Tested with the approval server switched off: the phone read the vault from Whitechain, signed
+with Face ID and submitted the release from its own gas key,
+[released onchain](https://explorer.testnet.whitechain.io/tx/0xd7938f7d28196e3a85e6286ae6db3376a82a76818ebe9ab9dd5b5eed4d3e1078).
+
 - **S:** The passkey's private key never leaves the phone's secure hardware. The vault checks
   the signature with the P256 precompile (present on Whitechain and Base, about 129k gas per
   release). The phone derives the digest from chain state itself, so a hostile server cannot
