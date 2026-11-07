@@ -19,3 +19,6 @@ secrets/*
 # deployment record judges can check.
 contracts/out
 contracts/cache
+
+# forge dry-run simulations
+contracts/broadcast/**/dry-run/

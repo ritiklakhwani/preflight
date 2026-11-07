@@ -38,6 +38,24 @@ and whether those counterparties were safe. An approval is a number and a yes bu
 | The approval screen comes from a server you have to trust | The phone rebuilds what it signs from the chain; the vault rejects anything else |
 | A human gate needs a Ledger at a desk | Face ID on the phone, verified onchain (P256), with the Ledger still available for HIGH verdicts |
 
+### Why the receipts can't be faked
+
+**The agent can lie in its reason. It can't lie in its receipts.**
+
+- **The agent never supplies its history.** It sends only an amount and a reason. Receipts are
+  rebuilt from onchain transfer logs, starting at the block the vault recorded for the last
+  refill, so a hijacked agent cannot hide or invent a payment.
+- **You sign what you saw.** The Face ID passkey signs an EIP-712 message that commits to the
+  hash of exactly those receipts. The phone recomputes that hash itself, so a server cannot
+  show one list and get a signature for another.
+- **The contract checks it.** `CaplineVault` verifies the P256 signature onchain and releases
+  one tranche. Anything else reverts.
+- **The reason is shown, labelled unverified.** Even if the agent lies about what it will do
+  next, it can misuse only one small tranche, and the next receipts show exactly where it went.
+
+Chain-verified, not self-reported: the receipts are read by the approval server and every line
+links to its transaction; having the phone re-read each transfer itself is on the roadmap.
+
 Preflight checks what your agent touches. Capline, new this weekend, decides whether it gets
 more money. The agent's wallet only ever holds one small tranche. When it runs dry, the agent
 asks, and the owner's phone shows what the last tranche bought: every payment and fill,
