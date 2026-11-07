@@ -15,6 +15,29 @@ ships as an MCP server, so the check happens inside the agent that was about to 
 
 **Your agent stays under the line until you've seen the receipts.**
 
+### The problem
+
+AI agents now hold money, and they fail in two ways:
+
+1. **They sign things they shouldn't.** One trading bot lost $7.5M to honeypot contracts in
+   June 2026 (Devcon 8, "The $7.5M Sandwich Bot Hack").
+2. **They raise their own limits.** "An agent will raise its spending cap without asking the
+   human when a task requires more money than the cap allows" (Devcon 8, "Keep your agents
+   under control!").
+
+Spend caps exist. What none of them show the owner is what the last money actually bought,
+and whether those counterparties were safe. An approval is a number and a yes button.
+
+### What Capline fixes
+
+| Today | With Capline |
+|---|---|
+| The agent's wallet holds the whole budget; a hijack drains it | The wallet holds one small tranche; the rest sits in `CaplineVault` |
+| The agent, or a prompt injection, can raise its own limit | Only the owner's passkey can release more; the agent calling `release` reverts |
+| The owner approves a number | The owner sees every payment since the last refill, rebuilt from chain data, each counterparty risk-scored by Preflight |
+| The approval screen comes from a server you have to trust | The phone rebuilds what it signs from the chain; the vault rejects anything else |
+| A human gate needs a Ledger at a desk | Face ID on the phone, verified onchain (P256), with the Ledger still available for HIGH verdicts |
+
 Preflight checks what your agent touches. Capline, new this weekend, decides whether it gets
 more money. The agent's wallet only ever holds one small tranche. When it runs dry, the agent
 asks, and the owner's phone shows what the last tranche bought: every payment and fill,
@@ -54,7 +77,7 @@ and a dated changelog, is in [docs/MUMBAI.md](./docs/MUMBAI.md).
 
 | Piece | Path |
 |---|---|
-| `CaplineVault`, passkey-gated tranches, 21 forge tests with real P256 signatures | `contracts/` |
+| `CaplineVault`, passkey-gated tranches, 28 forge tests with real P256 signatures | `contracts/` |
 | Vault client and EIP-712 types | `packages/capline/` |
 | Receipts builder | `packages/receipts/` |
 | MCP tools `capline_status`, `capline_request` | `packages/mcp/` |
@@ -165,6 +188,10 @@ app's own WebAuthn code):
 [release relayed by the server](https://explorer.testnet.whitechain.io/tx/0xbc803bbee0b1cd530b9061737e0c2191f28c31fcb0a983fa8e4b536c90eabcaf).
 The same run sends a replayed signature, an agent releasing to itself, and a release while
 dropped; all three revert onchain.
+
+From a real iPhone: Face ID approval of a 5 USDT refill after three paid API calls, with the
+receipts on screen,
+[released onchain](https://explorer.testnet.whitechain.io/tx/0x6407088ce5c0d09665072b1ee460dc7f52189f8e3860ad8be0780d863aebcce1).
 
 ### Run it
 
