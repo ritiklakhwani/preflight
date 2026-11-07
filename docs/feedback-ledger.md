@@ -48,8 +48,8 @@ Verbatim output on successful provisioning:
 ```
 wallet-cli ring init
 
-✔ Member credentials created
-✔ Ledger Key Ring ready
+OK: Member credentials created
+OK: Ledger Key Ring ready
 
 Member:  Ritiks-MacBook-Air.local (darwin)
 Root ID: <redacted>
@@ -82,8 +82,8 @@ Run back to back:
 
 ```
 wallet-cli ring init
-✔ Member credentials created
-✔ Ledger Key Ring ready
+OK: Member credentials created
+OK: Ledger Key Ring ready
 
 wallet-cli ring keys
 No keys yet. Use `ring encrypt --key <name>` to create one.
